@@ -291,12 +291,12 @@ This creates a tag that the teaching assistant will check out to validate the st
 
 ## Definition of done
 
-- [ ] Repository exists; all team members and the TA have access.
-- [ ] `mvn clean package` succeeds locally on every member's machine.
-- [ ] `mvn compile exec:java` prints the team name.
-- [ ] A run produces `logs/engine.log` with at least one well-formed CSV log line and no header line.
-- [ ] The `teamName` unit test runs in CI on every PR.
-- [ ] `main` is protected: PR + 1 approving review + green CI required; direct pushes rejected.
-- [ ] The PR template is in place.
-- [ ] At least one merged PR shows a real review conversation and closed a GitHub issue via `Fixes #N`.
-- [ ] Tag `v0.1` is pushed.
+- [x] Repository exists; all team members and the TA have access.
+- [x] `mvn clean package` succeeds locally on every member's machine.
+- [x] `mvn compile exec:java` prints the team name.
+- [x] A run produces `logs/engine.log` with at least one well-formed CSV log line and no header line.
+- [x] The `teamName` unit test runs in CI on every PR.
+- [x] `main` is protected: PR + 1 approving review + green CI required; direct pushes rejected.
+- [x] The PR template is in place.
+- [x] At least one merged PR shows a real review conversation and closed a GitHub issue via `Fixes #N`.
+- [x] Tag `v0.1` is pushed.
