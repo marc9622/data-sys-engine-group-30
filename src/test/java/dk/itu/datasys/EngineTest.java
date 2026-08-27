@@ -6,6 +6,6 @@ import org.junit.jupiter.api.Test;
 class EngineTest {
     @Test
     void teamName() {
-        assertEquals("Team Group 30", new Engine().teamName());
+        assertEquals("Team Group_30", new Engine().teamName());
     }
 }
