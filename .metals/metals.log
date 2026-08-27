@@ -1,0 +1,26 @@
+2026.08.27 11:36:43 INFO  Started: Metals version 1.6.8 in folders '/Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30' for client Visual Studio Code 1.123.0.[0m
+2026.08.27 11:36:43 INFO  Memory monitor started[0m
+2026.08.27 11:36:43 WARN  Using H2 2.4.240 which is newer than the version Flyway has been verified with. The latest verified version of H2 is 2.3.232.[0m
+2026.08.27 11:36:43 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/main/java/dk/itu/datasys/Engine.java. Using fallback presentation compiler.[0m
+Aug 27, 2026 11:36:44 AM org.eclipse.lsp4j.jsonrpc.RemoteEndpoint handleCancellation
+WARNING: Unmatched cancel notification for request id 1
+2026.08.27 11:36:47 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:47 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:47 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:48 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:48 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:48 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:48 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:48 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:50 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:50 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:51 WARN  no build target for: /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java[0m
+2026.08.27 11:36:51 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:51 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:51 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:51 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:51 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:51 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:51 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
+2026.08.27 11:36:52 WARN  no build target for: /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java[0m
+2026.08.27 11:36:52 INFO  no build target found for /Users/malteblackn/Desktop/HowBuildDataBaseSystem/data-sys-engine-group-30/src/test/java/dk/itu/datasys/EngineTest.java. Using fallback presentation compiler.[0m
