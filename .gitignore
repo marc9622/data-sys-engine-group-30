@@ -1,4 +1,14 @@
+
+# Project
 target/
 logs/
+
+# Apple
 .DS_Store
 **/.DS_Store
+
+# NixOS
+*.nix
+.direnv
+.envrc
+
