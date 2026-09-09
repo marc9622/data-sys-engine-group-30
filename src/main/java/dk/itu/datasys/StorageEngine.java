@@ -136,27 +136,8 @@ public final class StorageEngine {
             List<Object[]> buffer = new ArrayList<>();
             while ((line = r.readLine()) != null) {
                 totalRows++;
-                String[] fields = line.split(",", -1);
-                if (fields.length != table.columns.size())
-                    throw new IllegalArgumentException("Malformed CSV " + csvFilePath + " at line " + totalRows + ": field count");
 
-                Object[] parsed = new Object[fields.length];
-                for (int i = 0; i < fields.length; i++) {
-                    String s = fields[i];
-                    ColumnType t = table.columns.get(i).type();
-                    try {
-                        switch (t) {
-                            case STRING -> parsed[i] = s;
-                            case LONG -> parsed[i] = Long.valueOf(s);
-                            case DOUBLE -> parsed[i] = Double.valueOf(s);
-                            default -> throw new IllegalArgumentException("unknown type");
-                        }
-                    } catch (Exception ex) {
-                        throw new IllegalArgumentException("Malformed CSV " + csvFilePath + " at line " + totalRows + ": " + ex.getMessage());
-                    }
-                }
-
-                buffer.add(parsed);
+                buffer.add(parseCsvLine(line, table.columns, csvFilePath, totalRows));
                 if (buffer.size() >= maxRowsPerPartition) {
                     writePartition(tableName, table, buffer, partitions);
                     partitions++;
@@ -329,10 +310,15 @@ public final class StorageEngine {
         for (int i = 0; i < fields.length; i++) {
             String s = fields[i];
             ColumnType t = cols.get(i).type();
-            switch (t) {
-                case STRING -> parsed[i] = s;
-                case LONG -> parsed[i] = Long.valueOf(s);
-                case DOUBLE -> parsed[i] = Double.valueOf(s);
+            try {
+                switch (t) {
+                    case STRING -> parsed[i] = s;
+                    case LONG -> parsed[i] = Long.valueOf(s);
+                    case DOUBLE -> parsed[i] = Double.valueOf(s);
+                    default -> throw new IllegalArgumentException("unknown type");
+                }
+            } catch (Exception ex) {
+                throw new IllegalArgumentException("Malformed CSV " + fileName + " at line " + lineNumber + ": " + ex.getMessage());
             }
         }
         return parsed;
