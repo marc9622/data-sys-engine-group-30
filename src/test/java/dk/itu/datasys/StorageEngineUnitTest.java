@@ -2,7 +2,6 @@ package dk.itu.datasys;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -36,9 +35,6 @@ class StorageEngineUnitTest {
         Object[] row2 = new Object[] {"B", 20L};
         Object[] row3 = new Object[] {"C", 5L};
 
-        // compute min/max for second column
-        Object min = null, max = null;
-        Object[] rows = new Object[][] {row1, row2, row3}[0];
         // reuse writePartition logic indirectly by creating a partition meta
         java.util.List<Object[]> list = List.of(row1, row2, row3);
         eng.createTable("t", cols);
@@ -65,8 +61,7 @@ class StorageEngineUnitTest {
         Object[] parsed = eng.parseCsvLine("Copenhagen,12", cols, "f", 1);
         assertEquals("Copenhagen", parsed[0]);
         assertEquals(12L, parsed[1]);
-
         assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("too,few,fields", cols, "f", 1));
-        assertThrows(NumberFormatException.class, () -> eng.parseCsvLine("Copenhagen,notanumber", cols, "f", 2));
+        assertThrows(NumberFormatException.class, () -> eng.parseCsvLine("Copenhagen,not a number", cols, "f", 2));
     }
 }
