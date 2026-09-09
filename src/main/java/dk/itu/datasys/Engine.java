@@ -25,7 +25,11 @@ public final class Engine {
         if (!Files.exists(csv))
             throw new IllegalArgumentException("golden CSV not found: " + csv.toAbsolutePath());
 
-        Path dataDirectory = Files.createTempDirectory("datasys-demo");
+        Path dataDirectory = switch (args.length) {
+            case 0 -> Files.createTempDirectory("datasys-demo");
+            case 1 -> Path.of(args[0]);
+            default -> throw new IllegalArgumentException("expected 0 or 1 arguments, got " + args.length);
+        };
         StorageEngine storage = new StorageEngine(dataDirectory);
         storage.createTable("trips", List.of(
                 new ColumnSpec("city", ColumnType.STRING),
@@ -33,12 +37,9 @@ public final class Engine {
                 new ColumnSpec("price", ColumnType.DOUBLE)));
         storage.copyFromCsvFile("trips", csv.toString());
 
-        printResults("distance GREATER_THAN 100", storage.select("trips", "distance",
-                Comparison.GREATER_THAN, 100L));
-        printResults("city EQUALS Copenhagen", storage.select("trips", "city",
-                Comparison.EQUALS, "Copenhagen"));
-        printResults("price LESS_THAN 50.0", storage.select("trips", "price",
-                Comparison.LESS_THAN, 50.0));
+        printResults("distance GREATER_THAN 100", storage.select("trips", "distance", Comparison.GREATER_THAN, 100L));
+        printResults("city EQUALS Copenhagen", storage.select("trips", "city", Comparison.EQUALS, "Copenhagen"));
+        printResults("price LESS_THAN 50.0", storage.select("trips", "price", Comparison.LESS_THAN, 50.0d));
 
         LOGGER.debug("engine stopped");
     }

@@ -256,7 +256,7 @@ public final class StorageEngine {
         return out;
     }
 
-    private boolean typeMatches(ColumnType t, Object constant) {
+    private static boolean typeMatches(ColumnType t, Object constant) {
         return switch (t) {
             case STRING -> constant instanceof String;
             case LONG -> constant instanceof Long;
@@ -338,35 +338,29 @@ public final class StorageEngine {
         return parsed;
     }
 
-    byte[] encodeValue(ColumnType t, Object v) throws IOException {
-        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        try (DataOutputStream out = new DataOutputStream(baos)) {
-            switch (t) {
-                case STRING -> {
-                    byte[] bs = ((String) v).getBytes(StandardCharsets.US_ASCII);
-                    out.writeInt(bs.length);
-                    out.write(bs);
-                }
-                case LONG -> out.writeLong((Long) v);
-                case DOUBLE -> out.writeDouble((Double) v);
+    static void encodeValue(DataOutputStream out, ColumnType t, Object v) throws IOException {
+        switch (t) {
+            case STRING -> {
+                byte[] bs = ((String) v).getBytes(StandardCharsets.US_ASCII);
+                out.writeInt(bs.length);
+                out.write(bs);
             }
+            case LONG -> out.writeLong((Long) v);
+            case DOUBLE -> out.writeDouble((Double) v);
         }
-        return baos.toByteArray();
     }
 
-    Object decodeValue(ColumnType t, byte[] bytes) throws IOException {
-        try (DataInputStream in = new DataInputStream(new java.io.ByteArrayInputStream(bytes))) {
-            return switch (t) {
-                case STRING -> {
-                    int len = in.readInt();
-                    byte[] bs = new byte[len];
-                    in.readFully(bs);
-                    yield new String(bs, StandardCharsets.US_ASCII);
-                }
-                case LONG -> in.readLong();
-                case DOUBLE -> in.readDouble();
-            };
-        }
+    static Object decodeValue(DataInputStream in, ColumnType t) throws IOException {
+        return switch (t) {
+            case STRING -> {
+                int len = in.readInt();
+                byte[] bs = new byte[len];
+                in.readFully(bs);
+                yield new String(bs, StandardCharsets.US_ASCII);
+            }
+            case LONG -> in.readLong();
+            case DOUBLE -> in.readDouble();
+        };
     }
 
     void writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
@@ -406,15 +400,8 @@ public final class StorageEngine {
     static void writePartitionColumn(DataOutputStream outp, ColumnType t, List<Object[]> rows, int colIndex, List<Object> mins, List<Object> maxs) throws IOException {
         for (Object[] row : rows) {
             Object val = row[colIndex];
-            switch (t) {
-                case STRING -> {
-                    byte[] bs = ((String) val).getBytes(StandardCharsets.US_ASCII);
-                    outp.writeInt(bs.length);
-                    outp.write(bs);
-                }
-                case LONG -> outp.writeLong((Long) val);
-                case DOUBLE -> outp.writeDouble((Double) val);
-            }
+
+            encodeValue(outp, t, val);
 
             Object curMin = mins.get(colIndex);
             Object curMax = maxs.get(colIndex);
@@ -426,16 +413,7 @@ public final class StorageEngine {
     static Object[] readPartitionColumn(DataInputStream in, ColumnType t, int rows) throws IOException {
         Object[] values = new Object[rows];
         for (int r = 0; r < rows; r++) {
-            switch (t) {
-                case STRING -> {
-                    int len = in.readInt();
-                    byte[] bs = new byte[len];
-                    in.readFully(bs);
-                    values[r] = new String(bs, StandardCharsets.US_ASCII);
-                }
-                case LONG -> values[r] = in.readLong();
-                case DOUBLE -> values[r] = in.readDouble();
-            }
+            values[r] = decodeValue(in, t);
         }
         return values;
     }

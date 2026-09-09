@@ -2,6 +2,9 @@ package dk.itu.datasys;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -9,21 +12,26 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
-import dk.itu.datasys.StorageEngine.MalformedCsvException;
+import dk.itu.datasys.StorageEngine.*;
+import static dk.itu.datasys.StorageEngine.*;
 
 class StorageEngineUnitTest {
 
     @Test
     void encodeDecodeStringLongDouble(@TempDir Path tmp) throws Exception {
-        StorageEngine eng = new StorageEngine(tmp);
+        Path dataDir = tmp.resolve("data");
 
-        byte[] s = eng.encodeValue(ColumnType.STRING, "hello");
-        byte[] l = eng.encodeValue(ColumnType.LONG, 123L);
-        byte[] d = eng.encodeValue(ColumnType.DOUBLE, 1.5);
+        try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(dataDir))) {
+            encodeValue(out, ColumnType.STRING, "hello");
+            encodeValue(out, ColumnType.LONG, 123L);
+            encodeValue(out, ColumnType.DOUBLE, 1.5);
+        }
 
-        assertEquals("hello", (String) eng.decodeValue(ColumnType.STRING, s));
-        assertEquals(123L, (Long) eng.decodeValue(ColumnType.LONG, l));
-        assertEquals(1.5d, (Double) eng.decodeValue(ColumnType.DOUBLE, d));
+        try (DataInputStream in = new DataInputStream(Files.newInputStream(dataDir))) {
+            assertEquals("hello", (String) decodeValue(in, ColumnType.STRING));
+            assertEquals(123L, (Long) decodeValue(in, ColumnType.LONG));
+            assertEquals(1.5d, (Double) decodeValue(in, ColumnType.DOUBLE));
+        }
     }
 
     @Test
