@@ -6,6 +6,9 @@ logs/
 .factorypath
 .project
 .settings/
+.local_jdk/
+
+# Editor
 .vscode/
 
 # Apple
