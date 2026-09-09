@@ -1,30 +1,21 @@
 package dk.itu.datasys;
 
-import java.io.BufferedReader;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import static java.util.Objects.requireNonNull;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
+import dk.itu.datasys.Spec.*;
 
 public final class StorageEngine {
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageEngine.class);
@@ -38,9 +29,12 @@ public final class StorageEngine {
     private volatile ScanStats lastScanStats = new ScanStats(0, 0, 0);
     private final int maxRowsPerPartition;
 
-    /** All persistent state (catalog + data files) lives under this directory. */
+    /**
+     * @param dataDir the directory where all persistent state (catalog + data files) lives under
+     */
     public StorageEngine(Path dataDir) {
-        Objects.requireNonNull(dataDir, "dataDir");
+        requireNonNull(dataDir, "dataDir");
+
         this.dataDir = dataDir;
         this.catalogPath = dataDir.resolve("catalog.json");
         this.maxRowsPerPartition = Integer.getInteger("maxRowsPerPartition", 1000);
@@ -79,9 +73,14 @@ public final class StorageEngine {
         return lastScanStats;
     }
 
+    /**
+     * Ensures that the catalog contains a table with the given name and columns.
+     * @param tableName the name of the table to create
+     * @param columns the list of columns for the table
+     */
     public void createTable(String tableName, List<ColumnSpec> columns) {
-        Objects.requireNonNull(tableName, "tableName");
-        Objects.requireNonNull(columns, "columns");
+        requireNonNull(tableName, "tableName");
+        requireNonNull(columns, "columns");
 
         if (columns.isEmpty())
             throw new IllegalArgumentException("empty column list");
@@ -104,9 +103,14 @@ public final class StorageEngine {
         }
     }
 
+    /**
+     * Copies the data from a CSV file into an empty table. The CSV file must have the same number of columns as the table, and the column types must match.
+     * @param tableName the name of the table to copy data into
+     * @param csvFilePath the path to the CSV file
+     */
     public void copyFile(String tableName, String csvFilePath) {
-        Objects.requireNonNull(tableName);
-        Objects.requireNonNull(csvFilePath);
+        requireNonNull(tableName);
+        requireNonNull(csvFilePath);
 
         TableMeta table;
         synchronized (catalog) {
@@ -176,11 +180,18 @@ public final class StorageEngine {
         }
     }
 
+    /**
+     * Retrieves rows from a table where the values in the specified columns satisfy the given comparison with the provided constant.
+     * @param tableName the name of the table to query
+     * @param columnName the name of the column to compare
+     * @param comparison the type of comparison to perform
+     * @param constant the constant value to compare against
+     */
     public List<Object[]> select(String tableName, String columnName, Comparison comparison, Object constant) {
-        Objects.requireNonNull(tableName);
-        Objects.requireNonNull(columnName);
-        Objects.requireNonNull(comparison);
-        Objects.requireNonNull(constant);
+        requireNonNull(tableName);
+        requireNonNull(columnName);
+        requireNonNull(comparison);
+        requireNonNull(constant);
 
         TableMeta table;
         synchronized (catalog) {
@@ -264,7 +275,6 @@ public final class StorageEngine {
         return out;
     }
 
-    /* helpers */
     private boolean typeMatches(ColumnType t, Object constant) {
         return switch (t) {
             case STRING -> constant instanceof String;
@@ -289,7 +299,6 @@ public final class StorageEngine {
         };
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     int compareObjects(Object a, Object b, ColumnType type) {
         if (a == null && b == null) return 0;
         if (a == null) return -1;
@@ -435,7 +444,7 @@ public final class StorageEngine {
     public static final class TableMeta {
         public List<ColumnSpec> columns = new ArrayList<>();
         public List<PartitionMeta> partitions = new ArrayList<>();
-        public boolean hasData = false;
+        private boolean hasData = false; // TODO: temporary, as we aren't storing the actual data yet.
 
         public TableMeta() {}
         public TableMeta(List<ColumnSpec> columns) { this.columns = columns; }
@@ -456,7 +465,7 @@ public final class StorageEngine {
         }
     }
 
-    private Object coerceJsonNumber(Object v, ColumnType ct) {
+    private static Object coerceJsonNumber(Object v, ColumnType ct) {
         if (v == null) return null;
         if (ct == ColumnType.STRING) return v.toString();
         if (v instanceof Number) {
