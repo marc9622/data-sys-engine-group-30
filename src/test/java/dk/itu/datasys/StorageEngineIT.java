@@ -116,7 +116,7 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
 
         e.createTable("trips", cols);
-        e.copyFromCsvFile("trips", resource("trips_sorted").toString());
+        e.copyFromCsvFile("trips", resource("trips_sorted.csv").toString());
 
         List<Object[]> res = e.select("trips", "distance", Comparison.GREATER_THAN, 200L);
         assertEquals(2, res.size());
