@@ -1,8 +1,9 @@
 
 # Catalog Storage
 One catalog file for all tables,
-Format: JSON,
-Where? 
+Format: JSON. We want to take advantage of how readable JSON is for humans, and then maybe move the a custom binary format later on.
+Where?
+
 # Catalog Contents
 The schema for each table, list of data files and partittions belonging to it. 
 
@@ -11,8 +12,10 @@ In the header per collumn per partition. The choice is rather arbitrary but the 
 
 # Restart
 It has to read the Catalog file which holds global statitics for all tables, and the header containing statistics per partition per  collumn. 
+
 # Layout Inside a Partition
 Columnar format 
+
 # Partition Size
 
 # Value Encodings and Framing
