@@ -269,7 +269,6 @@ public final class StorageEngine {
         if (pmin == null || pmax == null)
             return true;
 
-        int lohi = compareObjects(pmin, pmax, type); // >=0
         int cmin = compareObjects(constant, pmin, type);
         int cmax = compareObjects(constant, pmax, type);
 
