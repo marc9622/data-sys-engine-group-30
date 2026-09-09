@@ -273,7 +273,7 @@ public final class StorageEngine {
         };
     }
 
-    private boolean partitionMayContain(Object pmin, Object pmax, Comparison cmp, Object constant, ColumnType type) {
+    boolean partitionMayContain(Object pmin, Object pmax, Comparison cmp, Object constant, ColumnType type) {
         // null-safe
         if (pmin == null || pmax == null)
             return true;
@@ -290,7 +290,7 @@ public final class StorageEngine {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private int compareObjects(Object a, Object b, ColumnType type) {
+    int compareObjects(Object a, Object b, ColumnType type) {
         if (a == null && b == null) return 0;
         if (a == null) return -1;
         if (b == null) return 1;
@@ -302,7 +302,7 @@ public final class StorageEngine {
         };
     }
 
-    private boolean rowMatches(Object v, Comparison cmp, Object constant, ColumnType type) {
+    boolean rowMatches(Object v, Comparison cmp, Object constant, ColumnType type) {
         int c = compareObjects(v, constant, type);
         return switch (cmp) {
             case EQUALS -> c == 0;
@@ -311,7 +311,56 @@ public final class StorageEngine {
         };
     }
 
-    private void writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
+    // package-private helpers for unit tests
+    Object[] parseCsvLine(String line, List<ColumnSpec> cols, String fileName, int lineNumber) {
+        String[] fields = line.split(",", -1);
+        if (fields.length != cols.size())
+            throw new IllegalArgumentException("Malformed CSV " + fileName + " at line " + lineNumber + ": field count");
+        Object[] parsed = new Object[fields.length];
+        for (int i = 0; i < fields.length; i++) {
+            String s = fields[i];
+            ColumnType t = cols.get(i).type();
+            switch (t) {
+                case STRING -> parsed[i] = s;
+                case LONG -> parsed[i] = Long.valueOf(s);
+                case DOUBLE -> parsed[i] = Double.valueOf(s);
+            }
+        }
+        return parsed;
+    }
+
+    byte[] encodeValue(ColumnType t, Object v) throws IOException {
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(baos)) {
+            switch (t) {
+                case STRING -> {
+                    byte[] bs = ((String) v).getBytes(StandardCharsets.US_ASCII);
+                    out.writeInt(bs.length);
+                    out.write(bs);
+                }
+                case LONG -> out.writeLong((Long) v);
+                case DOUBLE -> out.writeDouble((Double) v);
+            }
+        }
+        return baos.toByteArray();
+    }
+
+    Object decodeValue(ColumnType t, byte[] bytes) throws IOException {
+        try (DataInputStream in = new DataInputStream(new java.io.ByteArrayInputStream(bytes))) {
+            return switch (t) {
+                case STRING -> {
+                    int len = in.readInt();
+                    byte[] bs = new byte[len];
+                    in.readFully(bs);
+                    yield new String(bs, StandardCharsets.US_ASCII);
+                }
+                case LONG -> in.readLong();
+                case DOUBLE -> in.readDouble();
+            };
+        }
+    }
+
+    void writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
         String fname = tableName + "-part-" + partitionIdx + ".bin";
         Path out = dataDir.resolve(fname);
         try (DataOutputStream outp = new DataOutputStream(new FileOutputStream(out.toFile()))) {
@@ -365,6 +414,9 @@ public final class StorageEngine {
             throw new RuntimeException("failed writing partition", e);
         }
     }
+
+    // package-private accessor for tests
+    Catalog catalogForTest() { return catalog; }
 
     private void persistCatalog() {
         try {
