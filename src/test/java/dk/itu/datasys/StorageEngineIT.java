@@ -8,9 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
+import dk.itu.datasys.Spec.*;
 
 class StorageEngineIT {
 
@@ -23,6 +21,7 @@ class StorageEngineIT {
         StorageEngine e1 = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING));
         e1.createTable("t", cols);
+
         // new engine should see table and reject duplicate create
         StorageEngine e2 = new StorageEngine(tmp);
         assertThrows(IllegalArgumentException.class, () -> e2.createTable("t", cols));
@@ -112,11 +111,12 @@ class StorageEngineIT {
     @Test
     void pruningWithSortedCsv(@TempDir Path tmp) {
         System.setProperty("maxRowsPerPartition", "2");
-        StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
+
+        StorageEngine e = new StorageEngine(tmp);
+
         e.createTable("trips", cols);
-        Path csv = resource("trips_sorted.csv");
-        e.copyFromCsvFile("trips", csv.toString());
+        e.copyFromCsvFile("trips", resource("trips_sorted").toString());
 
         List<Object[]> res = e.select("trips", "distance", Comparison.GREATER_THAN, 200L);
         assertEquals(2, res.size());
@@ -127,17 +127,22 @@ class StorageEngineIT {
     @Test
     void dataPersistenceAfterCopy(@TempDir Path tmp) {
         System.setProperty("maxRowsPerPartition", "2");
-        StorageEngine e1 = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
-        e1.createTable("trips", cols);
-        Path csv = resource("trips.csv");
-        e1.copyFromCsvFile("trips", csv.toString());
 
+        // first engine
+        StorageEngine e1 = new StorageEngine(tmp);
+
+        e1.createTable("trips", cols);
+        e1.copyFromCsvFile("trips", resource("trips.csv").toString());
+
+        // second engine
         StorageEngine e2 = new StorageEngine(tmp);
+
+        // assert that both engines return same results for a query
         List<Object[]> out1 = e1.select("trips", "distance", Comparison.GREATER_THAN, -1L);
         List<Object[]> out2 = e2.select("trips", "distance", Comparison.GREATER_THAN, -1L);
         assertEquals(out1.size(), out2.size());
-        // compare first row values
+
         for (int i = 0; i < out1.size(); i++) {
             Object[] a = out1.get(i);
             Object[] b = out2.get(i);
