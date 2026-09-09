@@ -67,7 +67,7 @@ class StorageEngineUnitTest {
         /* bad */ {
             assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("too,many,fields", cols, "f", 1));
             assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("tooFewFields", cols, "f", 1));
-            assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("Copenhagen,not a number", cols, "f", 2));
+            assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("Copenhagen,not a number", cols, "f", 1));
         }
     }
 }
