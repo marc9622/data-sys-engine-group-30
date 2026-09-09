@@ -135,8 +135,15 @@ class StorageEngineIT {
         e1.createTable("trips", cols);
         e1.copyFromCsvFile("trips", resource("trips.csv").toString());
 
+        StorageEngine.Catalog c1 = e1.catalogForTest();
+
         // second engine
         StorageEngine e2 = new StorageEngine(tmp);
+
+        StorageEngine.Catalog c2 = e2.catalogForTest();
+
+        // assert that both engines return equal catalogs
+        assertEquals(c1.tables, c2.tables);
 
         // assert that both engines return same results for a query
         List<Object[]> out1 = e1.select("trips", "distance", Comparison.GREATER_THAN, -1L);

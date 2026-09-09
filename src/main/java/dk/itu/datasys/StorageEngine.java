@@ -449,6 +449,13 @@ public final class StorageEngine {
     public static final class Catalog {
         public Map<String, TableMeta> tables = new HashMap<>();
         public Catalog() {}
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Catalog that)) return false;
+            return Objects.equals(tables, that.tables);
+        }
     }
 
     public static final class TableMeta {
@@ -458,6 +465,14 @@ public final class StorageEngine {
 
         public TableMeta() {}
         public TableMeta(List<ColumnSpec> columns) { this.columns = columns; }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof TableMeta that)) return false;
+            return Objects.equals(columns, that.columns) &&
+                   Objects.equals(partitions, that.partitions);
+        }
     }
 
     public static final class PartitionMeta {
@@ -472,6 +487,16 @@ public final class StorageEngine {
             this.mins = mins;
             this.maxs = maxs;
             this.rowCount = rowCount;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof PartitionMeta that)) return false;
+            return rowCount == that.rowCount &&
+                   Objects.equals(fileName, that.fileName) &&
+                   Objects.equals(mins, that.mins) &&
+                   Objects.equals(maxs, that.maxs);
         }
     }
 
