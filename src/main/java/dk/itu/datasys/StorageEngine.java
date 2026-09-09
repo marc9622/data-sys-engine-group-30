@@ -229,27 +229,20 @@ public final class StorageEngine {
             try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
                 int rows = in.readInt();
                 int cols = in.readInt();
+
+                // load column-wise: for each column read all row values into an array
+                List<Object[]> colData = new ArrayList<>(cols);
+                for (int c = 0; c < cols; c++) {
+                    ColumnType t = table.columns.get(c).type();
+                    colData.add(readPartitionColumn(in, t, rows));
+                }
+
+                // assemble rows from column arrays and evaluate predicate
                 for (int r = 0; r < rows; r++) {
                     Object[] row = new Object[cols];
-                    for (int c = 0; c < cols; c++) {
-                        ColumnType t = table.columns.get(c).type();
-                        switch (t) {
-                            case STRING -> {
-                                int len = in.readInt();
-                                byte[] bs = new byte[len];
-                                in.readFully(bs);
-                                row[c] = new String(bs, StandardCharsets.US_ASCII);
-                            }
-                            case LONG -> row[c] = in.readLong();
-                            case DOUBLE -> row[c] = in.readDouble();
-                        }
-                    }
-
-                    // evaluate predicate on colIdx
+                    for (int c = 0; c < cols; c++) row[c] = colData.get(c)[r];
                     Object v = row[colIdx];
-                    if (rowMatches(v, comparison, constant, colType)) {
-                        out.add(row);
-                    }
+                    if (rowMatches(v, comparison, constant, colType)) out.add(row);
                 }
             } catch (IOException e) {
                 throw new RuntimeException("failed reading partition " + partFile, e);
@@ -389,8 +382,10 @@ public final class StorageEngine {
             List<Object> mins = new ArrayList<>(Arrays.asList(new Object[cols]));
             List<Object> maxs = new ArrayList<>(Arrays.asList(new Object[cols]));
 
-            for (Object[] row : rows) {
-                writePartitionRow(outp, table.columns, row, mins, maxs);
+            // write column-wise: for each column write all row values
+            for (int c = 0; c < cols; c++) {
+                ColumnType t = table.columns.get(c).type();
+                writePartitionColumn(outp, t, rows, c, mins, maxs);
             }
 
             // record partition meta
@@ -408,14 +403,9 @@ public final class StorageEngine {
         }
     }
 
-    static void writePartitionRow(DataOutputStream outp, List<ColumnSpec> cols, Object[] row, List<Object> mins, List<Object> maxs) throws IOException {
-        int columnCount = cols.size();
-
-        for (int c = 0; c < columnCount; c++) {
-            Object val = row[c];
-            ColumnType t = cols.get(c).type();
-
-            // write value
+    static void writePartitionColumn(DataOutputStream outp, ColumnType t, List<Object[]> rows, int colIndex, List<Object> mins, List<Object> maxs) throws IOException {
+        for (Object[] row : rows) {
+            Object val = row[colIndex];
             switch (t) {
                 case STRING -> {
                     byte[] bs = ((String) val).getBytes(StandardCharsets.US_ASCII);
@@ -426,12 +416,28 @@ public final class StorageEngine {
                 case DOUBLE -> outp.writeDouble((Double) val);
             }
 
-            // update min/max
-            Object curMin = mins.get(c);
-            Object curMax = maxs.get(c);
-            if (curMin == null || compareObjects(val, curMin, t) < 0) mins.set(c, val);
-            if (curMax == null || compareObjects(val, curMax, t) > 0) maxs.set(c, val);
+            Object curMin = mins.get(colIndex);
+            Object curMax = maxs.get(colIndex);
+            if (curMin == null || compareObjects(val, curMin, t) < 0) mins.set(colIndex, val);
+            if (curMax == null || compareObjects(val, curMax, t) > 0) maxs.set(colIndex, val);
         }
+    }
+
+    static Object[] readPartitionColumn(DataInputStream in, ColumnType t, int rows) throws IOException {
+        Object[] values = new Object[rows];
+        for (int r = 0; r < rows; r++) {
+            switch (t) {
+                case STRING -> {
+                    int len = in.readInt();
+                    byte[] bs = new byte[len];
+                    in.readFully(bs);
+                    values[r] = new String(bs, StandardCharsets.US_ASCII);
+                }
+                case LONG -> values[r] = in.readLong();
+                case DOUBLE -> values[r] = in.readDouble();
+            }
+        }
+        return values;
     }
 
     Catalog catalogForTest() { return catalog; }
