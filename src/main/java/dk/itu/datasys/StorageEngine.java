@@ -225,7 +225,7 @@ public final class StorageEngine {
             Path partFile = dataDir.resolve(p.fileName);
             try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
                 int rows = in.readInt();
-                int cols = in.readInt();
+                int cols = in.readInt(); // TODO: unnecessary to have column count in the partition header.
                 if (cols != table.columns.size())
                     throw new IOException("partition column count does not match table schema: " + partFile);
                 readPartitionStats(in, table.columns, p);
@@ -369,7 +369,7 @@ public final class StorageEngine {
             int rowsCount = rows.size();
             int cols = table.columns.size();
             outp.writeInt(rowsCount);
-            outp.writeInt(cols);
+            outp.writeInt(cols); // TODO: unnecessary to have column count in the partition header.
 
             List<Object> mins = partitionStats(rows, table.columns, true);
             List<Object> maxs = partitionStats(rows, table.columns, false);
@@ -440,7 +440,7 @@ public final class StorageEngine {
         Path partFile = dataDir.resolve(partition.fileName);
         try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
             int rows = in.readInt();
-            int cols = in.readInt();
+            int cols = in.readInt(); // TODO: unnecessary to have column count in the partition header.
             if (cols != columns.size() || rows != partition.rowCount)
                 throw new IOException("partition header does not match catalog: " + partFile);
             readPartitionStats(in, columns, partition);
