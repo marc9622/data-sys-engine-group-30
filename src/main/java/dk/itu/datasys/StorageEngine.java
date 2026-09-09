@@ -287,7 +287,7 @@ public final class StorageEngine {
         };
     }
 
-    int compareObjects(Object a, Object b, ColumnType type) {
+    static int compareObjects(Object a, Object b, ColumnType type) {
         if (a == null && b == null) return 0;
         if (a == null) return -1;
         if (b == null) return 1;
@@ -386,34 +386,11 @@ public final class StorageEngine {
             outp.writeInt(cols);
 
             // initialize mins/maxs
-            List<Object> mins = new ArrayList<>();
-            List<Object> maxs = new ArrayList<>();
-            for (int c = 0; c < cols; c++) {
-                mins.add(null);
-                maxs.add(null);
-            }
+            List<Object> mins = new ArrayList<>(Arrays.asList(new Object[cols]));
+            List<Object> maxs = new ArrayList<>(Arrays.asList(new Object[cols]));
 
             for (Object[] row : rows) {
-                for (int c = 0; c < cols; c++) {
-                    Object val = row[c];
-                    ColumnType t = table.columns.get(c).type();
-                    // write value
-                    switch (t) {
-                        case STRING -> {
-                            byte[] bs = ((String) val).getBytes(StandardCharsets.US_ASCII);
-                            outp.writeInt(bs.length);
-                            outp.write(bs);
-                        }
-                        case LONG -> outp.writeLong((Long) val);
-                        case DOUBLE -> outp.writeDouble((Double) val);
-                    }
-
-                    // update min/max
-                    Object curMin = mins.get(c);
-                    Object curMax = maxs.get(c);
-                    if (curMin == null || compareObjects(val, curMin, t) < 0) mins.set(c, val);
-                    if (curMax == null || compareObjects(val, curMax, t) > 0) maxs.set(c, val);
-                }
+                writePartitionRow(outp, table.columns, row, mins, maxs);
             }
 
             // record partition meta
@@ -431,7 +408,32 @@ public final class StorageEngine {
         }
     }
 
-    // package-private accessor for tests
+    static void writePartitionRow(DataOutputStream outp, List<ColumnSpec> cols, Object[] row, List<Object> mins, List<Object> maxs) throws IOException {
+        int columnCount = cols.size();
+
+        for (int c = 0; c < columnCount; c++) {
+            Object val = row[c];
+            ColumnType t = cols.get(c).type();
+
+            // write value
+            switch (t) {
+                case STRING -> {
+                    byte[] bs = ((String) val).getBytes(StandardCharsets.US_ASCII);
+                    outp.writeInt(bs.length);
+                    outp.write(bs);
+                }
+                case LONG -> outp.writeLong((Long) val);
+                case DOUBLE -> outp.writeDouble((Double) val);
+            }
+
+            // update min/max
+            Object curMin = mins.get(c);
+            Object curMax = maxs.get(c);
+            if (curMin == null || compareObjects(val, curMin, t) < 0) mins.set(c, val);
+            if (curMax == null || compareObjects(val, curMax, t) > 0) maxs.set(c, val);
+        }
+    }
+
     Catalog catalogForTest() { return catalog; }
 
     private void persistCatalog() {
@@ -442,7 +444,8 @@ public final class StorageEngine {
         }
     }
 
-    /* metadata classes */
+    // ---------- Metadata Classes ----------
+
     public static final class Catalog {
         public Map<String, TableMeta> tables = new HashMap<>();
         public Catalog() {}
@@ -475,17 +478,15 @@ public final class StorageEngine {
     private static Object coerceJsonNumber(Object v, ColumnType ct) {
         if (v == null) return null;
         if (ct == ColumnType.STRING) return v.toString();
-        if (v instanceof Number) {
-            Number n = (Number) v;
+        if (v instanceof Number n) {
             return switch (ct) {
                 case LONG -> n.longValue();
                 case DOUBLE -> n.doubleValue();
                 default -> v;
             };
         }
-        // sometimes Jackson deserializes small integers as Integer; handle by parsing from string
-        if (v instanceof String) {
-            String s = (String) v;
+        // NOTE: sometimes Jackson deserializes small integers as Integer; handle by parsing from string
+        if (v instanceof String s) {
             try {
                 return switch (ct) {
                     case LONG -> Long.valueOf(s);
