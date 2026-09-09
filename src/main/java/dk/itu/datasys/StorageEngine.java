@@ -451,7 +451,7 @@ public final class StorageEngine {
     public static final class TableMeta {
         public List<ColumnSpec> columns = new ArrayList<>();
         public List<PartitionMeta> partitions = new ArrayList<>();
-        private boolean hasData = false; // TODO: temporary, as we aren't storing the actual data yet.
+        private boolean hasData = false;
 
         public TableMeta() {}
         public TableMeta(List<ColumnSpec> columns) { this.columns = columns; }
