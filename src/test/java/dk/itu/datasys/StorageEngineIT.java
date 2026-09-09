@@ -53,7 +53,7 @@ class StorageEngineIT {
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("trips", cols);
         Path csv = resource("trips.csv");
-        e.copyFile("trips", csv.toString());
+        e.copyFromCsvFile("trips", csv.toString());
 
         // STRING equals
         List<Object[]> s = e.select("trips", "city", Comparison.EQUALS, "Copenhagen");
@@ -74,7 +74,7 @@ class StorageEngineIT {
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("t", cols);
         Path csv = resource("trips.csv");
-        e.copyFile("t", csv.toString());
+        e.copyFromCsvFile("t", csv.toString());
 
         List<Object[]> none = e.select("t", "distance", Comparison.GREATER_THAN, 1000L);
         assertEquals(0, none.size());
@@ -91,7 +91,7 @@ class StorageEngineIT {
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("trips", cols);
         Path csv = resource("trips.csv");
-        e.copyFile("trips", csv.toString());
+        e.copyFromCsvFile("trips", csv.toString());
 
         StorageEngine.TableMeta tm = e.catalogForTest().tables.get("trips");
         assertEquals(4, tm.partitions.size());
@@ -116,7 +116,7 @@ class StorageEngineIT {
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("trips", cols);
         Path csv = resource("trips_sorted.csv");
-        e.copyFile("trips", csv.toString());
+        e.copyFromCsvFile("trips", csv.toString());
 
         List<Object[]> res = e.select("trips", "distance", Comparison.GREATER_THAN, 200L);
         assertEquals(2, res.size());
@@ -131,7 +131,7 @@ class StorageEngineIT {
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e1.createTable("trips", cols);
         Path csv = resource("trips.csv");
-        e1.copyFile("trips", csv.toString());
+        e1.copyFromCsvFile("trips", csv.toString());
 
         StorageEngine e2 = new StorageEngine(tmp);
         List<Object[]> out1 = e1.select("trips", "distance", Comparison.GREATER_THAN, -1L);
