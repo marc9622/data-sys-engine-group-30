@@ -61,7 +61,8 @@ class StorageEngineUnitTest {
         Object[] parsed = eng.parseCsvLine("Copenhagen,12", cols, "f", 1);
         assertEquals("Copenhagen", parsed[0]);
         assertEquals(12L, parsed[1]);
-        assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("too,few,fields", cols, "f", 1));
+        assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("too,many,fields", cols, "f", 1));
+        assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("tooFewFields", cols, "f", 1));
         assertThrows(NumberFormatException.class, () -> eng.parseCsvLine("Copenhagen,not a number", cols, "f", 2));
     }
 }
