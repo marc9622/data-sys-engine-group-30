@@ -108,7 +108,7 @@ public final class StorageEngine {
      * @param tableName the name of the table to copy data into
      * @param csvFilePath the path to the CSV file
      */
-    public void copyFile(String tableName, String csvFilePath) {
+    public void copyFromCsvFile(String tableName, String csvFilePath) {
         requireNonNull(tableName);
         requireNonNull(csvFilePath);
 

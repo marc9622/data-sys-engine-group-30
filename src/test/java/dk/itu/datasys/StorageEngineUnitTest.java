@@ -7,9 +7,9 @@ import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
+import dk.itu.datasys.Spec.*;
 
 class StorageEngineUnitTest {
 
@@ -36,7 +36,7 @@ class StorageEngineUnitTest {
         Object[] row3 = new Object[] {"C", 5L};
 
         // reuse writePartition logic indirectly by creating a partition meta
-        java.util.List<Object[]> list = List.of(row1, row2, row3);
+        List<Object[]> list = List.of(row1, row2, row3);
         eng.createTable("t", cols);
         StorageEngine.TableMeta tm = eng.catalogForTest().tables.get("t");
         eng.writePartition("t", tm, list, 0);
@@ -54,15 +54,20 @@ class StorageEngineUnitTest {
     }
 
     @Test
-    void csvParsingGoodAndBad() throws Exception {
-        Path tmp3 = Files.createTempDirectory("engunit3");
-        StorageEngine eng = new StorageEngine(tmp3);
+    void csvParsingGoodAndBad(@TempDir Path tmp) throws Exception {
+        StorageEngine eng = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG));
-        Object[] parsed = eng.parseCsvLine("Copenhagen,12", cols, "f", 1);
-        assertEquals("Copenhagen", parsed[0]);
-        assertEquals(12L, parsed[1]);
-        assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("too,many,fields", cols, "f", 1));
-        assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("tooFewFields", cols, "f", 1));
-        assertThrows(NumberFormatException.class, () -> eng.parseCsvLine("Copenhagen,not a number", cols, "f", 2));
+
+        /* good */ {
+            Object[] parsed = eng.parseCsvLine("Copenhagen,12", cols, "f", 1);
+            assertEquals("Copenhagen", parsed[0]);
+            assertEquals(12L, parsed[1]);
+        }
+
+        /* bad */ {
+            assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("too,many,fields", cols, "f", 1));
+            assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("tooFewFields", cols, "f", 1));
+            assertThrows(IllegalArgumentException.class, () -> eng.parseCsvLine("Copenhagen,not a number", cols, "f", 2));
+        }
     }
 }
