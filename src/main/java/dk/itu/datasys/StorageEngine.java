@@ -12,6 +12,8 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import static java.util.Objects.requireNonNull;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,16 +50,11 @@ public final class StorageEngine {
         if (Files.exists(catalogPath)) {
             try {
                 this.catalog = mapper.readValue(catalogPath.toFile(), Catalog.class);
-                // coerce partition min/max types to match declared column types
+                // Partition statistics live in the partition files, not in the catalog.
                 for (Map.Entry<String, TableMeta> te : catalog.tables.entrySet()) {
                     TableMeta tm = te.getValue();
                     for (PartitionMeta pm : tm.partitions) {
-                        if (pm.mins == null || pm.maxs == null) continue;
-                        for (int i = 0; i < tm.columns.size(); i++) {
-                            ColumnType ct = tm.columns.get(i).type();
-                            pm.mins.set(i, coerceJsonNumber(pm.mins.get(i), ct));
-                            pm.maxs.set(i, coerceJsonNumber(pm.maxs.get(i), ct));
-                        }
+                        loadPartitionStats(pm, tm.columns);
                     }
                 }
             } catch (Exception e) {
@@ -229,6 +226,9 @@ public final class StorageEngine {
             try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
                 int rows = in.readInt();
                 int cols = in.readInt();
+                if (cols != table.columns.size())
+                    throw new IOException("partition column count does not match table schema: " + partFile);
+                readPartitionStats(in, table.columns, p);
 
                 // load column-wise: for each column read all row values into an array
                 List<Object[]> colData = new ArrayList<>(cols);
@@ -372,14 +372,20 @@ public final class StorageEngine {
             outp.writeInt(rowsCount);
             outp.writeInt(cols);
 
-            // initialize mins/maxs
-            List<Object> mins = new ArrayList<>(Arrays.asList(new Object[cols]));
-            List<Object> maxs = new ArrayList<>(Arrays.asList(new Object[cols]));
+            List<Object> mins = partitionStats(rows, table.columns, true);
+            List<Object> maxs = partitionStats(rows, table.columns, false);
+
+            // Store statistics in the partition header before the column data.
+            for (int c = 0; c < cols; c++) {
+                ColumnType t = table.columns.get(c).type();
+                encodeValue(outp, t, mins.get(c));
+                encodeValue(outp, t, maxs.get(c));
+            }
 
             // write column-wise: for each column write all row values
             for (int c = 0; c < cols; c++) {
                 ColumnType t = table.columns.get(c).type();
-                writePartitionColumn(outp, t, rows, c, mins, maxs);
+                writePartitionColumn(outp, t, rows, c);
             }
 
             // record partition meta
@@ -397,16 +403,48 @@ public final class StorageEngine {
         }
     }
 
-    static void writePartitionColumn(DataOutputStream outp, ColumnType t, List<Object[]> rows, int colIndex, List<Object> mins, List<Object> maxs) throws IOException {
+    static void writePartitionColumn(DataOutputStream outp, ColumnType t, List<Object[]> rows, int colIndex) throws IOException {
         for (Object[] row : rows) {
             Object val = row[colIndex];
 
             encodeValue(outp, t, val);
+        }
+    }
 
-            Object curMin = mins.get(colIndex);
-            Object curMax = maxs.get(colIndex);
-            if (curMin == null || compareObjects(val, curMin, t) < 0) mins.set(colIndex, val);
-            if (curMax == null || compareObjects(val, curMax, t) > 0) maxs.set(colIndex, val);
+    private static List<Object> partitionStats(List<Object[]> rows, List<ColumnSpec> columns, boolean minimum) {
+        List<Object> stats = new ArrayList<>(Arrays.asList(new Object[columns.size()]));
+        for (Object[] row : rows) {
+            for (int c = 0; c < columns.size(); c++) {
+                Object value = row[c];
+                Object current = stats.get(c);
+                ColumnType type = columns.get(c).type();
+                if (current == null || (minimum
+                        ? compareObjects(value, current, type) < 0
+                        : compareObjects(value, current, type) > 0)) {
+                    stats.set(c, value);
+                }
+            }
+        }
+        return stats;
+    }
+
+    private static void readPartitionStats(DataInputStream in, List<ColumnSpec> columns, PartitionMeta partition) throws IOException {
+        partition.mins = new ArrayList<>(columns.size());
+        partition.maxs = new ArrayList<>(columns.size());
+        for (ColumnSpec column : columns) {
+            partition.mins.add(decodeValue(in, column.type()));
+            partition.maxs.add(decodeValue(in, column.type()));
+        }
+    }
+
+    private void loadPartitionStats(PartitionMeta partition, List<ColumnSpec> columns) throws IOException {
+        Path partFile = dataDir.resolve(partition.fileName);
+        try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
+            int rows = in.readInt();
+            int cols = in.readInt();
+            if (cols != columns.size() || rows != partition.rowCount)
+                throw new IOException("partition header does not match catalog: " + partFile);
+            readPartitionStats(in, columns, partition);
         }
     }
 
@@ -461,7 +499,9 @@ public final class StorageEngine {
 
     public static final class PartitionMeta {
         public String fileName;
+        @JsonIgnore
         public List<Object> mins;
+        @JsonIgnore
         public List<Object> maxs;
         public int rowCount;
 
@@ -484,28 +524,4 @@ public final class StorageEngine {
         }
     }
 
-    private static Object coerceJsonNumber(Object v, ColumnType ct) {
-        if (v == null) return null;
-        if (ct == ColumnType.STRING) return v.toString();
-        if (v instanceof Number n) {
-            return switch (ct) {
-                case LONG -> n.longValue();
-                case DOUBLE -> n.doubleValue();
-                default -> v;
-            };
-        }
-        // NOTE: sometimes Jackson deserializes small integers as Integer; handle by parsing from string
-        if (v instanceof String s) {
-            try {
-                return switch (ct) {
-                    case LONG -> Long.valueOf(s);
-                    case DOUBLE -> Double.valueOf(s);
-                    case STRING -> s;
-                };
-            } catch (NumberFormatException ex) {
-                return v;
-            }
-        }
-        return v;
-    }
 }
