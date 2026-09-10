@@ -50,11 +50,10 @@ public final class StorageEngine {
         if (Files.exists(catalogPath)) {
             try {
                 this.catalog = mapper.readValue(catalogPath.toFile(), Catalog.class);
-                // Partition statistics live in the partition files, not in the catalog.
-                for (Map.Entry<String, TableMeta> te : catalog.tables.entrySet()) {
-                    TableMeta tm = te.getValue();
-                    for (PartitionMeta pm : tm.partitions) {
-                        loadPartitionStats(pm, tm.columns);
+
+                for (TableMeta table : catalog.tables.values()) {
+                    for (PartitionMeta partition : table.partitions) {
+                        loadPartitionStats(partition, table.columns);
                     }
                 }
             } catch (Exception e) {
@@ -206,47 +205,20 @@ public final class StorageEngine {
         List<Object[]> out = new ArrayList<>();
 
         long start = System.currentTimeMillis();
-        AtomicInteger pidx = new AtomicInteger(0);
-        for (PartitionMeta p : table.partitions) {
-            int idx = pidx.getAndIncrement();
-            Object pmin = p.mins.get(colIdx);
-            Object pmax = p.maxs.get(colIdx);
+        for (PartitionMeta partition : table.partitions) {
+            Object pmin = partition.mins.get(colIdx);
+            Object pmax = partition.maxs.get(colIdx);
 
             boolean canContain = partitionMayContain(pmin, pmax, comparison, constant, colType);
-            LOGGER.debug("table={} column={} comparison={} const={} partition={} min={} max={} decision={}", tableName, columnName, comparison, constant, idx, pmin, pmax, canContain ? "READ" : "PRUNED");
+            LOGGER.debug("table={} column={} comparison={} const={} partition={} min={} max={} decision={}", tableName, columnName, comparison, constant, partitionsRead, pmin, pmax, canContain ? "READ" : "PRUNED");
 
             if (!canContain) {
                 partitionsPruned++;
                 continue;
             }
 
+            readPartition(table, partition, comparison, constant, colIdx, colType, out);
             partitionsRead++;
-            // read partition file
-            Path partFile = dataDir.resolve(p.fileName);
-            try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
-                int rows = in.readInt();
-                int cols = in.readInt(); // TODO: unnecessary to have column count in the partition header.
-                if (cols != table.columns.size())
-                    throw new IOException("partition column count does not match table schema: " + partFile);
-                readPartitionStats(in, table.columns, p);
-
-                // load column-wise: for each column read all row values into an array
-                List<Object[]> colData = new ArrayList<>(cols);
-                for (int c = 0; c < cols; c++) {
-                    ColumnType t = table.columns.get(c).type();
-                    colData.add(readPartitionColumn(in, t, rows));
-                }
-
-                // assemble rows from column arrays and evaluate predicate
-                for (int r = 0; r < rows; r++) {
-                    Object[] row = new Object[cols];
-                    for (int c = 0; c < cols; c++) row[c] = colData.get(c)[r];
-                    Object v = row[colIdx];
-                    if (rowMatches(v, comparison, constant, colType)) out.add(row);
-                }
-            } catch (IOException e) {
-                throw new RuntimeException("failed reading partition " + partFile, e);
-            }
         }
 
         long dur = System.currentTimeMillis() - start;
@@ -256,6 +228,25 @@ public final class StorageEngine {
         return out;
     }
 
+    public void clearAllData() {
+        synchronized (catalog) {
+            for (TableMeta table : catalog.tables.values()) {
+                for (PartitionMeta partition : table.partitions) {
+                    Path partFile = dataDir.resolve(partition.fileName);
+                    try {
+                        Files.deleteIfExists(partFile);
+                    } catch (IOException e) {
+                        throw new RuntimeException("failed to delete partition file: " + partFile, e);
+                    }
+                }
+            }
+            catalog.tables.clear();
+            persistCatalog();
+        }
+    }
+
+    // ---------- Helpers ----------
+
     private static boolean typeMatches(ColumnType t, Object constant) {
         return switch (t) {
             case STRING -> constant instanceof String;
@@ -264,8 +255,7 @@ public final class StorageEngine {
         };
     }
 
-    boolean partitionMayContain(Object pmin, Object pmax, Comparison cmp, Object constant, ColumnType type) {
-        // null-safe
+    static boolean partitionMayContain(Object pmin, Object pmax, Comparison cmp, Object constant, ColumnType type) {
         if (pmin == null || pmax == null)
             return true;
 
@@ -279,7 +269,7 @@ public final class StorageEngine {
         };
     }
 
-    static int compareObjects(Object a, Object b, ColumnType type) {
+    private static int compareObjects(Object a, Object b, ColumnType type) {
         if (a == null && b == null) return 0;
         if (a == null) return -1;
         if (b == null) return 1;
@@ -291,7 +281,7 @@ public final class StorageEngine {
         };
     }
 
-    boolean rowMatches(Object v, Comparison cmp, Object constant, ColumnType type) {
+    private static boolean rowMatches(Object v, Comparison cmp, Object constant, ColumnType type) {
         int c = compareObjects(v, constant, type);
         return switch (cmp) {
             case EQUALS -> c == 0;
@@ -300,7 +290,7 @@ public final class StorageEngine {
         };
     }
 
-    public final class MalformedCsvException extends Exception {
+    public static final class MalformedCsvException extends Exception {
         public MalformedCsvException(String message) {
             super(message);
         }
@@ -314,7 +304,7 @@ public final class StorageEngine {
         }
     }
 
-    Object[] parseCsvLine(String line, List<ColumnSpec> cols) throws MalformedCsvException {
+    static Object[] parseCsvLine(String line, List<ColumnSpec> cols) throws MalformedCsvException {
         String[] fields = line.split(",", -1);
         if (fields.length != cols.size())
             throw new MalformedCsvException("field count");
@@ -369,10 +359,9 @@ public final class StorageEngine {
             int rowsCount = rows.size();
             int cols = table.columns.size();
             outp.writeInt(rowsCount);
-            outp.writeInt(cols); // TODO: unnecessary to have column count in the partition header.
 
-            List<Object> mins = partitionStats(rows, table.columns, true);
-            List<Object> maxs = partitionStats(rows, table.columns, false);
+            List<Object> mins = partitionStats(rows, table.columns, PartitionStatKind.MINIMUM);
+            List<Object> maxs = partitionStats(rows, table.columns, PartitionStatKind.MAXIMUM);
 
             // Store statistics in the partition header before the column data.
             for (int c = 0; c < cols; c++) {
@@ -410,16 +399,24 @@ public final class StorageEngine {
         }
     }
 
-    private static List<Object> partitionStats(List<Object[]> rows, List<ColumnSpec> columns, boolean minimum) {
+    static enum PartitionStatKind {
+        MINIMUM,
+        MAXIMUM;
+
+        private int compare(Object a, Object b, ColumnType type) {
+            int cmp = compareObjects(a, b, type);
+            return this == MINIMUM ? cmp : -cmp;
+        }
+    }
+
+    static List<Object> partitionStats(List<Object[]> rows, List<ColumnSpec> columns, PartitionStatKind statKind) {
         List<Object> stats = new ArrayList<>(Arrays.asList(new Object[columns.size()]));
         for (Object[] row : rows) {
             for (int c = 0; c < columns.size(); c++) {
                 Object value = row[c];
                 Object current = stats.get(c);
                 ColumnType type = columns.get(c).type();
-                if (current == null || (minimum
-                        ? compareObjects(value, current, type) < 0
-                        : compareObjects(value, current, type) > 0)) {
+                if (current == null || statKind.compare(value, current, type) < 0) {
                     stats.set(c, value);
                 }
             }
@@ -440,10 +437,35 @@ public final class StorageEngine {
         Path partFile = dataDir.resolve(partition.fileName);
         try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
             int rows = in.readInt();
-            int cols = in.readInt(); // TODO: unnecessary to have column count in the partition header.
-            if (cols != columns.size() || rows != partition.rowCount)
+            if (rows != partition.rowCount)
                 throw new IOException("partition header does not match catalog: " + partFile);
             readPartitionStats(in, columns, partition);
+        }
+    }
+
+    void readPartition(TableMeta table, PartitionMeta partition, Comparison comparison, Object constant, int colIdx, ColumnType colType, List<Object[]> out) {
+        Path partFile = dataDir.resolve(partition.fileName);
+        try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
+            int rows = in.readInt();
+            int cols = table.columns.size();
+            readPartitionStats(in, table.columns, partition);
+
+            // load column-wise: for each column read all row values into an array
+            List<Object[]> colData = new ArrayList<>(cols);
+            for (int c = 0; c < cols; c++) {
+                ColumnType t = table.columns.get(c).type();
+                colData.add(readPartitionColumn(in, t, rows));
+            }
+
+            // assemble rows from column arrays and evaluate predicate
+            for (int r = 0; r < rows; r++) {
+                Object[] row = new Object[cols];
+                for (int c = 0; c < cols; c++) row[c] = colData.get(c)[r];
+                Object v = row[colIdx];
+                if (rowMatches(v, comparison, constant, colType)) out.add(row);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("failed reading partition " + partFile, e);
         }
     }
 
@@ -485,7 +507,9 @@ public final class StorageEngine {
         private boolean hasData = false;
 
         public TableMeta() {}
-        public TableMeta(List<ColumnSpec> columns) { this.columns = columns; }
+        public TableMeta(List<ColumnSpec> columns) {
+            this.columns = columns;
+        }
 
         @Override
         public boolean equals(Object o) {
