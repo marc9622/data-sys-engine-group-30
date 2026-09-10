@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import static java.util.Objects.requireNonNull;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -226,6 +225,19 @@ public final class StorageEngine {
         LOGGER.debug("table={} column={} comparison={} const={} partitionsRead={} partitionsPruned={} rowsOut={} durationMs={}", tableName, columnName, comparison, constant, partitionsRead, partitionsPruned, out.size(), dur);
 
         return out;
+    }
+
+    /**
+     */
+    public List<ColumnSpec> schema(String tableName) {
+        requireNonNull(tableName);
+
+        synchronized (catalog) {
+            TableMeta table = catalog.tables.get(tableName);
+            if (table == null)
+                throw new IllegalArgumentException("unknown table: " + tableName);
+            return List.copyOf(table.columns);
+        }
     }
 
     public void clearAllData() {
