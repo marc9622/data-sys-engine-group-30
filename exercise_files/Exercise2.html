@@ -1,0 +1,324 @@
+<h1
+id="exercise-2-your-own-binary-format-catalog-and-filtered-scans">Exercise
+2: Your Own Binary Format, Catalog, and Filtered Scans</h1>
+<p>How to Build Data Systems – Fall 2026</p>
+<p>In this exercise, you implement the storage core of your engine as a
+plain Java API. There is no SQL text and no parsing yet; parsing arrives
+in week 3, the operator pipeline in week 4. This exercise builds on your
+Exercise 1 repository.</p>
+<p>Rules:</p>
+<ul>
+<li>All code enters via pull requests with a teammate’s review and green
+CI.</li>
+<li>No SQL strings anywhere. This week’s API takes table names, column
+specs, and constants as Java values.</li>
+<li>No external storage or file-format libraries (no Parquet, Arrow,
+SQLite, …). Designing and writing the binary format yourself is the
+point. Plain-Java CSV reading (<code>BufferedReader.readLine()</code> +
+<code>String.split(",")</code>) is fine: course CSV files contain no
+quoted fields or embedded commas. The ban covers the <em>data</em>
+format only: a JSON or properties library for the catalog (Jackson, for
+instance) is allowed.</li>
+</ul>
+<h2 id="design-discussion">1. Design discussion</h2>
+<p>Decide as a team and write the decisions down in
+<code>docs/storage-design.md</code>, merged via a reviewed PR. It will
+feed the Part 1 report’s architecture section.</p>
+<ol type="1">
+<li><strong>Catalog storage:</strong> one catalog file or one per table?
+Which format: JSON, Java properties, or your own binary? Where on disk
+relative to the data directory?</li>
+<li><strong>Catalog contents:</strong> per table, at least the schema
+and the list of data files and partitions that belong to it.</li>
+<li><strong>Where the min/max summaries live.</strong> The requirement
+is only that they exist per column per partition and that
+<code>select</code> can consult them without reading the column data
+they describe. Three designs are defensible. A <strong>footer</strong>
+after the data is Parquet’s choice and is natural for a single-pass
+writer. A <strong>header</strong> at the front is convenient for the
+reader, but the writer must buffer the partition or seek back to fill it
+in. <strong>In the catalog only</strong> means that pruning needs no
+data-file I/O at all, as in Snowflake and Iceberg, but a data file is
+then no longer self-describing. Pick one and justify it.</li>
+<li><strong>Restart:</strong> what does a fresh
+<code>StorageEngine</code> on the same directory have to read before it
+can answer a <code>select</code>?</li>
+<li><strong>Layout inside a partition:</strong> choose either row-wise
+or columnar format.</li>
+<li><strong>Partition size:</strong> maximum rows per partition, as a
+configurable parameter (your tests will use tiny values like 2; pick a
+sensible default).</li>
+<li><strong>Value encodings and framing:</strong> e.g. <code>LONG</code>
+as 8-byte two’s-complement, <code>DOUBLE</code> as 8-byte IEEE 754,
+<code>STRING</code> as length-prefixed ASCII bytes; magic bytes and a
+format version number at the start of each file; how a reader finds a
+given partition’s column chunk.</li>
+<li><strong>Byte order:</strong> <code>ByteBuffer</code> defaults to
+big-endian, while the machines you run on are little-endian. Pick one
+and document the choice.</li>
+</ol>
+<h2 id="the-api">2. The API</h2>
+<p>Define these types:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">enum</span> ColumnType <span class="op">{</span> STRING<span class="op">,</span> LONG<span class="op">,</span> DOUBLE <span class="op">}</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">record</span> <span class="fu">ColumnSpec</span><span class="op">(</span><span class="bu">String</span> name<span class="op">,</span> ColumnType type<span class="op">)</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">enum</span> Comparison <span class="op">{</span> EQUALS<span class="op">,</span> LESS_THAN<span class="op">,</span> GREATER_THAN <span class="op">}</span></span></code></pre></div>
+<p>Implement this class (names may differ; signatures should not):</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">final</span> <span class="kw">class</span> StorageEngine <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">/**</span> All persistent state <span class="co">(</span>catalog <span class="co">+</span> data files<span class="co">)</span> lives under this directory<span class="co">. */</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="fu">StorageEngine</span><span class="op">(</span>Path dataDirectory<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">createTable</span><span class="op">(</span><span class="bu">String</span> tableName<span class="op">,</span> <span class="bu">List</span><span class="op">&lt;</span>ColumnSpec<span class="op">&gt;</span> columns<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">copyFile</span><span class="op">(</span><span class="bu">String</span> tableName<span class="op">,</span> <span class="bu">String</span> csvFilePath<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="bu">List</span><span class="op">&lt;</span><span class="bu">Object</span><span class="op">[]&gt;</span> <span class="fu">select</span><span class="op">(</span><span class="bu">String</span> tableName<span class="op">,</span> <span class="bu">String</span> columnName<span class="op">,</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>                                 Comparison comparison<span class="op">,</span> <span class="bu">Object</span> constant<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Taking the data directory as a constructor argument is what makes the
+engine testable: each test runs against a fresh temporary directory, and
+a restart is simulated by constructing a second engine on the same
+directory.</p>
+<p><code>createTable</code>:</p>
+<ul>
+<li>Throws <code>IllegalArgumentException</code> if the table already
+exists, the column list is empty, or column names repeat.</li>
+<li>Persists the schema in the catalog: after a restart, the table is
+still known.</li>
+<li>Creates no data files yet.</li>
+</ul>
+<p><code>copyFile</code>:</p>
+<ul>
+<li>Throws if the table does not exist.</li>
+<li>CSV input has no header line; line 1 is already data. Fields are
+positional: the <em>n</em>-th value in every line belongs to the
+<em>n</em>-th column of the schema. A line whose field count differs
+from the schema’s column count is an error. Values are ASCII; no quoted
+fields. This matches the engine’s own log files, which you will
+<code>COPY</code> in week 5.</li>
+<li>Parses each value according to the column type; a malformed value
+fails the whole copy with an error message naming the file and line
+number.</li>
+<li>Writes the data in your binary format: rows split into partitions of
+at most <code>maxRowsPerPartition</code> rows; per column and per
+partition, min and max values computed during the write and persisted
+where your design puts them.</li>
+<li>Registers the new file and its partitions in the catalog,
+persistently.</li>
+<li>One copy per table is enough in Part 1: a second
+<code>copyFile</code> on the same table may throw
+<code>UnsupportedOperationException</code>. (Appending arrives in Part
+2.)</li>
+</ul>
+<p><code>select</code>:</p>
+<ul>
+<li>Throws if the table or column is unknown, or if
+<code>constant</code>’s Java type does not match the column type
+(<code>String</code> for <code>STRING</code>, <code>Long</code> for
+<code>LONG</code>, <code>Double</code> for <code>DOUBLE</code>). The
+match is exact: an <code>Integer</code> constant against a
+<code>LONG</code> column is an error, not a widening.</li>
+<li>Comparison semantics: numeric for
+<code>LONG</code>/<code>DOUBLE</code>; lexicographic ASCII comparison
+for <code>STRING</code> (this matches DuckDB for plain ASCII data).</li>
+<li>Returns every matching row as an <code>Object[]</code> in schema
+column order, rows in on-disk order.</li>
+<li><strong>Pruning is required:</strong> a partition whose min/max
+range cannot contain a match is skipped without reading its column data.
+Examples: predicate <code>distance &gt; 100</code> and partition max 87
+→ skip; predicate <code>city = 'Odense'</code> and partition range
+<code>[Aalborg, Copenhagen]</code> → skip.</li>
+<li>Make pruning observable: a
+<code>record ScanStats(int partitionsTotal, int partitionsRead, int partitionsPruned)</code>
+retrievable after a select, and log lines for every min/max created and
+every prune-or-read decision made (Task 3). A value that only lives in a
+Java object is not observable.</li>
+</ul>
+<h2 id="logging">3. Logging</h2>
+<p>Emit at least one CSV log line per API call, with the measurements in
+the message as <code>key=value</code> pairs. Log messages must not
+contain commas, so that each line parses into exactly seven values by
+position.</p>
+<p>Log statistics where they are created and where they are used, not
+only summarized at the end of the call:</p>
+<pre class="csv"><code>2027-02-14 12:01:15.204,3f9c1a2e,0,1,DEBUG,StorageEngine,table=trips file=trips_sorted.csv rows=8 partitions=4 durationMs=12
+2027-02-14 12:01:15.207,3f9c1a2e,0,1,DEBUG,StorageEngine,table=trips partition=0 column=distance min=12 max=31
+2027-02-14 12:01:15.209,3f9c1a2e,0,1,DEBUG,StorageEngine,table=trips partition=1 column=distance min=88 max=95
+2027-02-14 12:01:15.318,3f9c1a2e,0,1,DEBUG,StorageEngine,table=trips column=distance comparison=GREATER_THAN const=100 partition=0 min=12 max=31 decision=PRUNED
+2027-02-14 12:01:15.319,3f9c1a2e,0,1,DEBUG,StorageEngine,table=trips column=distance comparison=GREATER_THAN const=100 partition=2 min=140 max=187 decision=READ
+2027-02-14 12:01:15.321,3f9c1a2e,0,1,DEBUG,StorageEngine,table=trips column=distance comparison=GREATER_THAN const=100 partitionsRead=2 partitionsPruned=2 rowsOut=4 durationMs=3</code></pre>
+<p>(The scenario is test 8 below: the golden data sorted by
+<code>distance</code>, <code>maxRowsPerPartition = 2</code>. Only some
+per-partition lines are shown. <code>statementNumber</code> is 0
+throughout, because this week’s API takes Java calls, not SQL
+statements; it starts counting in week 4.) Every min/max computed during
+<code>copyFile</code> and every prune-or-read decision during
+<code>select</code> gets its own <code>LOGGER.debug</code> line at the
+point it happens; the per-call summary line comes on top. In week 5 you
+will load these very lines with your own <code>COPY</code> and analyze
+them with your own <code>SELECT</code>.</p>
+<h2 id="required-tests-junit-6">4. Required tests (JUnit 6)</h2>
+<p>Two kinds of test, both required from now on, in separate classes
+(e.g. <code>*Test</code> for unit, <code>*IT</code> for
+integration):</p>
+<ul>
+<li><strong>Unit tests</strong> call one Java method directly and check
+its result in isolation. This includes internal methods you introduce
+yourself, not just the public API.</li>
+<li><strong>Integration tests</strong> drive the public
+<code>StorageEngine</code> API end-to-end: CSV in, binary format on
+disk, <code>select</code> back out.</li>
+</ul>
+<p>Note on visibility: JUnit cannot call a <code>private</code> method
+from a separate test class. Any internal method you want to unit-test
+directly must be <strong>package-private</strong> (no modifier), with
+the test class in the same package under <code>src/test/java/...</code>.
+Keep <code>StorageEngine</code>’s public surface limited to the three
+API methods.</p>
+<p>Note on the build: Surefire, the plugin from Exercise 1, runs
+<code>*Test</code> classes only, so your <code>*IT</code> classes would
+silently never run. Add Failsafe to <code>pom.xml</code> to run them in
+the <code>verify</code> phase:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">plugin</span>&gt;</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">groupId</span>&gt;org.apache.maven.plugins&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">artifactId</span>&gt;maven-failsafe-plugin&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">version</span>&gt;3.5.6&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">executions</span>&gt;</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">execution</span>&gt;</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">goals</span>&gt;</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">goal</span>&gt;integration-test&lt;/<span class="kw">goal</span>&gt;</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">goal</span>&gt;verify&lt;/<span class="kw">goal</span>&gt;</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>      &lt;/<span class="kw">goals</span>&gt;</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">execution</span>&gt;</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">executions</span>&gt;</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">plugin</span>&gt;</span></code></pre></div>
+<p><code>mvn test</code> then runs the unit tests alone, while
+<code>mvn -B verify</code>, what CI runs, runs both kinds.</p>
+<p>Unit tests, against whatever internal methods your design
+produces:</p>
+<ol type="1">
+<li><strong>Value encoding round trip:</strong> for each
+<code>ColumnType</code>, encoding a value and decoding it back returns
+the original value.</li>
+<li><strong>Min/max computation:</strong> given a small list of values
+for one column, the min/max method returns the correct pair (include a
+single-value case and a negative case).</li>
+<li><strong>Pruning decision:</strong> given a predicate
+(<code>Comparison</code> + constant) and a partition’s min/max, the
+decision method returns the correct boolean; at least one pruning and
+one non-pruning case per comparison.</li>
+<li><strong>CSV line parsing:</strong> a well-formed line parses into
+correctly typed values by position; a malformed value and a wrong field
+count are each rejected with file and line number.</li>
+</ol>
+<p>Integration tests, each on a fresh <code>@TempDir</code>:</p>
+<ol type="1">
+<li><strong>Schema persistence:</strong> <code>createTable</code>, then
+a new <code>StorageEngine</code> on the same directory still knows the
+table.</li>
+<li><strong>Duplicate table:</strong> second <code>createTable</code>
+with the same name throws.</li>
+<li><strong>Round trip:</strong> copy the golden CSV below; a predicate
+matching everything (e.g. <code>distance &gt; -1</code>) returns all 8
+rows with correct values and types.</li>
+<li><strong>All comparisons × all types:</strong> <code>=</code>,
+<code>&lt;</code>, <code>&gt;</code> against a <code>STRING</code>, a
+<code>LONG</code>, and a <code>DOUBLE</code> column (9 combinations),
+checked against the golden data.</li>
+<li><strong>Empty result:</strong> a predicate matching nothing returns
+an empty list.</li>
+<li><strong>Errors:</strong> unknown table, unknown column, and a
+type-mismatched constant each throw.</li>
+<li><strong>Partitioning:</strong> with
+<code>maxRowsPerPartition = 2</code>, the golden file produces 4
+partitions with correct min/max values, read back from wherever you
+store them.</li>
+<li><strong>Pruning:</strong> copy a CSV sorted by <code>distance</code>
+with <code>maxRowsPerPartition = 2</code>; a selective predicate
+(e.g. <code>distance &gt; 200</code>) reports at least 2 partitions
+pruned and returns exactly the right rows.</li>
+<li><strong>Data persistence:</strong> copy with engine A; a new engine
+B on the same directory returns the same rows.</li>
+</ol>
+<h2 id="golden-example-and-runnable-demo">5. Golden example and runnable
+demo</h2>
+<p><code>src/test/resources/trips.csv</code> (eight lines, all
+data):</p>
+<pre class="csv"><code>Copenhagen,12,23.5
+Aarhus,187,301.0
+Odense,95,120.75
+Copenhagen,140,210.0
+Aalborg,210,340.5
+Roskilde,31,45.0
+Copenhagen,88,99.99
+Esbjerg,299,450.25</code></pre>
+<p>Expected results:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Predicate</th>
+<th>Matching rows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>distance GREATER_THAN 100</code></td>
+<td>Aarhus 187, Copenhagen 140, Aalborg 210, Esbjerg 299 (4 rows)</td>
+</tr>
+<tr>
+<td><code>city EQUALS "Copenhagen"</code></td>
+<td>distances 12, 140, 88 (3 rows)</td>
+</tr>
+<tr>
+<td><code>price LESS_THAN 50.0</code></td>
+<td>Copenhagen 23.5, Roskilde 45.0 (2 rows)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Requirement:</strong> <code>mvn compile exec:java</code>,
+with no further arguments, runs this example and prints the three
+results. This replaces Exercise 1’s team-name printout.</p>
+<h2 id="cut-release-v0.2">6. Cut release v0.2</h2>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> checkout main <span class="kw">&amp;&amp;</span> <span class="fu">git</span> pull</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> tag <span class="at">-a</span> v0.2 <span class="at">-m</span> <span class="st">&quot;Exercise 2: storage engine&quot;</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> push origin v0.2</span></code></pre></div>
+<p>This creates a tag that the teaching assistant will check out to
+validate the state of your project.</p>
+<h2 id="definition-of-done">Definition of done</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" /><code>docs/storage-design.md</code>
+merged, covering all design decisions with justifications.</label></li>
+<li><label><input type="checkbox" /><code>createTable</code>,
+<code>copyFile</code>, and <code>select</code> implemented against your
+own binary format with partitions and per-partition min/max
+summaries.</label></li>
+<li><label><input type="checkbox" />Catalog and data survive a
+restart.</label></li>
+<li><label><input type="checkbox" />Pruning observable as
+<code>ScanStats</code> and as individual log lines for every statistic
+created and every decision made.</label></li>
+<li><label><input type="checkbox" /><code>copyFile</code> reads
+headerless CSV positionally and rejects wrong field counts.</label></li>
+<li><label><input type="checkbox" />All unit and integration tests green
+in CI.</label></li>
+<li><label><input type="checkbox" /><code>mvn compile exec:java</code>
+prints the results of the three golden queries.</label></li>
+<li><label><input type="checkbox" />All of it merged through reviewed
+PRs.</label></li>
+<li><label><input type="checkbox" />Tag <code>v0.2</code> is
+pushed.</label></li>
+</ul>
+<h2 id="outlook">Outlook</h2>
+<p>In week 3, an ANTLR-generated parser turns SQL text into an AST that
+maps onto exactly this API. In week 4, <code>select</code> is refactored
+into a Volcano-style operator pipeline.</p>
