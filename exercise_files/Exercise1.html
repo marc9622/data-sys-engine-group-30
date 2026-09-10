@@ -1,0 +1,394 @@
+<h1
+id="exercise-1-team-toolchain-and-the-first-green-pull-request">Exercise
+1: Team, Toolchain, and the First Green Pull Request</h1>
+<p>How to Build Data Systems – Fall 2026</p>
+<p>In this exercise, your team sets up the engineering environment for
+the entire semester: a shared GitHub repository with a protected main
+branch, a Maven build whose tests run in CI on every pull request, a
+logging library that writes CSV log lines, and a first tagged release.
+Every later exercise builds directly on this repository.</p>
+<p>Prerequisites: a GitHub account for every team member, Java 25 or
+newer (<code>java -version</code>), Apache Maven 3.9 or newer
+(<code>mvn -version</code>), Git, and an IDE (VSCode recommended).</p>
+<h2 id="form-a-team-and-create-the-repository">1. Form a team and create
+the repository</h2>
+<ul>
+<li>Form a team of 2–3 students.</li>
+<li>Create a repository and name it
+<code>datasys-engine-&lt;teamname&gt;</code>.</li>
+<li>Add all team members and your TA, Alperen Aydin (GitHub username
+<code>alqeren1</code>), as collaborators.</li>
+</ul>
+<p>Note: Branch protection (Task 7) requires a public repository or a
+paid GitHub plan. Either make the repository public, or claim the free
+<a href="https://education.github.com/pack">GitHub Student Developer
+Pack</a>, which also gives you more AI via GitHub Copilot Pro.</p>
+<h2 id="set-up-the-maven-project">2. Set up the Maven project</h2>
+<p>Create this layout:</p>
+<pre><code>datasys-engine-&lt;teamname&gt;/
+├── pom.xml
+├── .gitignore                      (must ignore target/ and logs/)
+├── src/main/java/dk/itu/datasys/Engine.java
+├── src/main/resources/log4j2.xml   (Task 3)
+└── src/test/java/dk/itu/datasys/EngineTest.java</code></pre>
+<p>Use this <code>pom.xml</code> as your starting point (replace
+<code>dk.itu.datasys</code> with your own package if you prefer):</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">&lt;?xml</span> <span class="ot">version=</span><span class="st">&quot;1.0&quot;</span> <span class="ot">encoding=</span><span class="st">&quot;UTF-8&quot;</span><span class="fu">?&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">project</span> <span class="ot">xmlns=</span><span class="st">&quot;http://maven.apache.org/POM/4.0.0&quot;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>         <span class="ot">xmlns:xsi=</span><span class="st">&quot;http://www.w3.org/2001/XMLSchema-instance&quot;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>         <span class="ot">xsi:schemaLocation=</span><span class="st">&quot;http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd&quot;</span>&gt;</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">modelVersion</span>&gt;4.0.0&lt;/<span class="kw">modelVersion</span>&gt;</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">groupId</span>&gt;dk.itu.datasys&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">artifactId</span>&gt;engine&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">version</span>&gt;0.1.0&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">packaging</span>&gt;jar&lt;/<span class="kw">packaging</span>&gt;</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">properties</span>&gt;</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">maven.compiler.release</span>&gt;25&lt;/<span class="kw">maven.compiler.release</span>&gt;</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">project.build.sourceEncoding</span>&gt;UTF-8&lt;/<span class="kw">project.build.sourceEncoding</span>&gt;</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">log4j.version</span>&gt;2.26.1&lt;/<span class="kw">log4j.version</span>&gt;</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">properties</span>&gt;</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">dependencies</span>&gt;</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="co">&lt;!-- Logging API: your code compiles only against SLF4J --&gt;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">groupId</span>&gt;org.slf4j&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">artifactId</span>&gt;slf4j-api&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">version</span>&gt;2.0.18&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="co">&lt;!-- Logging backend: Log4j2, needed at runtime only --&gt;</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">groupId</span>&gt;org.apache.logging.log4j&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">artifactId</span>&gt;log4j-slf4j2-impl&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">version</span>&gt;${log4j.version}&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">scope</span>&gt;runtime&lt;/<span class="kw">scope</span>&gt;</span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">groupId</span>&gt;org.apache.logging.log4j&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">artifactId</span>&gt;log4j-core&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">version</span>&gt;${log4j.version}&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">scope</span>&gt;runtime&lt;/<span class="kw">scope</span>&gt;</span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>    <span class="co">&lt;!-- Testing --&gt;</span></span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">groupId</span>&gt;org.junit.jupiter&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">artifactId</span>&gt;junit-jupiter&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">version</span>&gt;6.1.2&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">scope</span>&gt;test&lt;/<span class="kw">scope</span>&gt;</span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">dependencies</span>&gt;</span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">build</span>&gt;</span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">plugins</span>&gt;</span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>      <span class="co">&lt;!-- Compiles with the Java release set above. Pinned because the version</span></span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a><span class="co">           Maven picks by default is too old to understand `maven.compiler.release`. --&gt;</span></span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">plugin</span>&gt;</span>
+<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">groupId</span>&gt;org.apache.maven.plugins&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">artifactId</span>&gt;maven-compiler-plugin&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">version</span>&gt;3.15.0&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>      &lt;/<span class="kw">plugin</span>&gt;</span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>      <span class="co">&lt;!-- Runs the JUnit tests during `mvn test` / `mvn package` / `mvn verify` --&gt;</span></span>
+<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">plugin</span>&gt;</span>
+<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">groupId</span>&gt;org.apache.maven.plugins&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">artifactId</span>&gt;maven-surefire-plugin&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">version</span>&gt;3.5.6&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>      &lt;/<span class="kw">plugin</span>&gt;</span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>      <span class="co">&lt;!-- Lets `mvn exec:java` start the engine --&gt;</span></span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">plugin</span>&gt;</span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">groupId</span>&gt;org.codehaus.mojo&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">artifactId</span>&gt;exec-maven-plugin&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">version</span>&gt;3.6.3&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>        &lt;<span class="kw">configuration</span>&gt;</span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>          &lt;<span class="kw">mainClass</span>&gt;dk.itu.datasys.Engine&lt;/<span class="kw">mainClass</span>&gt;</span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>        &lt;/<span class="kw">configuration</span>&gt;</span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>      &lt;/<span class="kw">plugin</span>&gt;</span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">plugins</span>&gt;</span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">build</span>&gt;</span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">project</span>&gt;</span></code></pre></div>
+<p>The Maven commands you will use all semester:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mvn clean package</code></td>
+<td>Compiles, runs all tests, and produces
+<code>target/engine-0.1.0.jar</code></td>
+</tr>
+<tr>
+<td><code>mvn test</code></td>
+<td>Compiles and runs the tests only</td>
+</tr>
+<tr>
+<td><code>mvn -B verify</code></td>
+<td>What CI runs: like <code>package</code>, non-interactive output</td>
+</tr>
+<tr>
+<td><code>mvn compile</code></td>
+<td>Compiles the source only</td>
+</tr>
+<tr>
+<td><code>mvn exec:java</code></td>
+<td>Runs the already-compiled main class; fails if nothing has been
+compiled yet</td>
+</tr>
+</tbody>
+</table>
+<p>Note: Maven has no built-in <code>mvn start</code> (that is npm’s
+convention). The standard way to run a plain Java project is the
+<code>exec-maven-plugin</code> configured above. Run
+<code>mvn compile</code> and <code>mvn exec:java</code> as two commands,
+or chained as <code>mvn compile exec:java</code>.</p>
+<p><strong>Requirement:</strong> <code>mvn compile exec:java</code>,
+with no further arguments, must print your team name.</p>
+<p><code>Engine.java</code> starting point:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">package</span><span class="im"> dk</span><span class="op">.</span><span class="im">itu</span><span class="op">.</span><span class="im">datasys</span><span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">java</span><span class="op">.</span><span class="im">util</span><span class="op">.</span><span class="im">UUID</span><span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">org</span><span class="op">.</span><span class="im">slf4j</span><span class="op">.</span><span class="im">Logger</span><span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">org</span><span class="op">.</span><span class="im">slf4j</span><span class="op">.</span><span class="im">LoggerFactory</span><span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">org</span><span class="op">.</span><span class="im">slf4j</span><span class="op">.</span><span class="im">MDC</span><span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">final</span> <span class="kw">class</span> Engine <span class="op">{</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">private</span> <span class="dt">static</span> <span class="dt">final</span> <span class="bu">Logger</span> LOGGER <span class="op">=</span> LoggerFactory<span class="op">.</span><span class="fu">getLogger</span><span class="op">(</span>Engine<span class="op">.</span><span class="fu">class</span><span class="op">);</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">static</span> <span class="dt">void</span> <span class="fu">main</span><span class="op">(</span><span class="bu">String</span><span class="op">[]</span> args<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>        MDC<span class="op">.</span><span class="fu">put</span><span class="op">(</span><span class="st">&quot;sessionId&quot;</span><span class="op">,</span> <span class="bu">UUID</span><span class="op">.</span><span class="fu">randomUUID</span><span class="op">().</span><span class="fu">toString</span><span class="op">());</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>        MDC<span class="op">.</span><span class="fu">put</span><span class="op">(</span><span class="st">&quot;statementNumber&quot;</span><span class="op">,</span> <span class="st">&quot;0&quot;</span><span class="op">);</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>        LOGGER<span class="op">.</span><span class="fu">debug</span><span class="op">(</span><span class="st">&quot;engine started&quot;</span><span class="op">);</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>        <span class="bu">System</span><span class="op">.</span><span class="fu">out</span><span class="op">.</span><span class="fu">println</span><span class="op">(</span><span class="kw">new</span> <span class="fu">Engine</span><span class="op">().</span><span class="fu">teamName</span><span class="op">());</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>        LOGGER<span class="op">.</span><span class="fu">debug</span><span class="op">(</span><span class="st">&quot;engine stopped&quot;</span><span class="op">);</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    <span class="bu">String</span> <span class="fu">teamName</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="st">&quot;Team &lt;your team name&gt;&quot;</span><span class="op">;</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The team name sits in its own <code>teamName()</code> method rather
+than inline in the <code>println</code>: a method that returns a value
+can be unit-tested, a <code>println</code> buried in <code>main</code>
+cannot. Task 4 tests exactly this method.</p>
+<h2 id="add-logging">3. Add logging</h2>
+<p>Your engine will later analyze its own logs with its own
+<code>COPY</code> and <code>SELECT</code> commands. That only works if
+the log is CSV in a schema the engine can load. The course’s suggested
+schema:</p>
+<pre><code>timestamp, sessionId, statementNumber, threadId, logLevel, className, logMessage</code></pre>
+<p>Three of these columns identify <em>which run, which statement, and
+which class</em> a line belongs to:</p>
+<ul>
+<li><strong><code>sessionId</code></strong> (<code>STRING</code>)
+identifies one run of the engine. Generate a random string once at
+startup, with <code>UUID.randomUUID().toString()</code> as in the code
+below, and put it in the MDC. From week 4 on, one session is one SQL
+script that the engine executes.</li>
+<li><strong><code>statementNumber</code></strong> (<code>LONG</code>)
+counts the SQL statements within a session: the first statement of the
+script is 1, the second is 2, and so on. Your engine executes no SQL
+yet, so set it to <strong>0</strong> at startup and leave it there this
+week. Zero means “this line does not belong to a statement”. That keeps
+the column a valid integer on every line, which matters in week 5: you
+will <code>COPY</code> this file into a <code>LONG</code> column, and an
+empty field would fail to parse.</li>
+<li><strong><code>className</code></strong> (<code>STRING</code>) names
+the class that wrote the line. It costs you nothing: every logger is
+created for a class
+(<code>LoggerFactory.getLogger(Engine.class)</code>), and
+<code>%logger{1}</code> in the <code>PatternLayout</code> writes that
+class’s simple name into every line. As the engine grows components,
+this column is what isolates one component’s lines with a plain equality
+filter.</li>
+</ul>
+<p>Fill the first two via the MDC, once at startup, with
+<code>%X{sessionId}</code> and <code>%X{statementNumber}</code> as their
+own fields in the <code>PatternLayout</code>; the third comes from the
+logger itself. Every log line the engine writes afterwards then carries
+all three automatically.</p>
+<p>The dependencies in Task 2 give you SLF4J (the logging API your code
+uses) with Log4j2 (the backend that formats and writes the file).
+Configure the backend in <code>src/main/resources/log4j2.xml</code>:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">&lt;?xml</span> <span class="ot">version=</span><span class="st">&quot;1.0&quot;</span> <span class="ot">encoding=</span><span class="st">&quot;UTF-8&quot;</span><span class="fu">?&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">Configuration</span> <span class="ot">status=</span><span class="st">&quot;warn&quot;</span>&gt;</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">Appenders</span>&gt;</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="co">&lt;!-- One live log file; full files rotate away as engine-1.log, engine-2.log, ... --&gt;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">RollingFile</span> <span class="ot">name=</span><span class="st">&quot;CsvLog&quot;</span> <span class="ot">fileName=</span><span class="st">&quot;logs/engine.log&quot;</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>                 <span class="ot">filePattern=</span><span class="st">&quot;logs/engine-%i.log&quot;</span>&gt;</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">PatternLayout</span> <span class="ot">pattern=</span><span class="st">&quot;%d{yyyy-MM-dd HH:mm:ss.SSS},%X{sessionId},%X{statementNumber},%tid,%level,%logger{1},%m%n&quot;</span>/&gt;</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">SizeBasedTriggeringPolicy</span> <span class="ot">size=</span><span class="st">&quot;10 MB&quot;</span>/&gt;</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">DefaultRolloverStrategy</span> <span class="ot">max=</span><span class="st">&quot;1000&quot;</span>/&gt;</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">RollingFile</span>&gt;</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">&lt;!-- Console copy for debugging; stderr keeps stdout clean for program output --&gt;</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">Console</span> <span class="ot">name=</span><span class="st">&quot;Console&quot;</span> <span class="ot">target=</span><span class="st">&quot;SYSTEM_ERR&quot;</span>&gt;</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">PatternLayout</span> <span class="ot">pattern=</span><span class="st">&quot;%d{HH:mm:ss.SSS} %level %logger{1} - %m%n&quot;</span>/&gt;</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">Console</span>&gt;</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">Appenders</span>&gt;</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">Loggers</span>&gt;</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">Root</span> <span class="ot">level=</span><span class="st">&quot;debug&quot;</span>&gt;</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">AppenderRef</span> <span class="ot">ref=</span><span class="st">&quot;CsvLog&quot;</span>/&gt;</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">AppenderRef</span> <span class="ot">ref=</span><span class="st">&quot;Console&quot;</span>/&gt;</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">Root</span>&gt;</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">Loggers</span>&gt;</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">Configuration</span>&gt;</span></code></pre></div>
+<p>How the pattern maps to the schema: <code>%d{…}</code> is the
+timestamp; <code>%X{sessionId}</code> and
+<code>%X{statementNumber}</code> read the SLF4J MDC (per-thread
+context); <code>%tid</code> is the numeric thread id;
+<code>%level</code> and <code>%m</code> are the log level and message;
+<code>%logger{1}</code> is the simple name of the class the logger was
+created for. An MDC key that was never set renders as an empty field.
+That is fine for a <code>STRING</code> column, but not for
+<code>statementNumber</code>, which is why you set it to 0 at
+startup.</p>
+<p>All runs write to the one active file <code>logs/engine.log</code>,
+so it always contains the newest lines; each new run appends, and
+<code>sessionId</code> separates the runs. When the file reaches the
+size threshold, its content moves to <code>engine-1.log</code>,
+<code>engine-2.log</code>, and so on, with higher numbers newer. You
+will not reach 10 MB for weeks. To see one rollover now, lower the
+threshold to 1 KB, start the engine a few times, and restore the
+threshold.</p>
+<p><strong>Log levels:</strong> the course uses exactly two log levels.
+<code>LOGGER.debug</code> records normal work; <code>LOGGER.error</code>
+records failures. Nothing can fail in this week’s engine, so every line
+is <code>debug</code> for now. Once the engine can fail, every exception
+it throws must leave at least one <code>ERROR</code> line in the
+log.</p>
+<p><strong>Requirement:</strong> after one
+<code>mvn compile exec:java</code> run, <code>logs/engine.log</code>
+exists and contains at least one well-formed log line.</p>
+<h2 id="add-a-first-unit-test">4. Add a first unit test</h2>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">package</span><span class="im"> dk</span><span class="op">.</span><span class="im">itu</span><span class="op">.</span><span class="im">datasys</span><span class="op">;</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="kw">static</span><span class="im"> org</span><span class="op">.</span><span class="im">junit</span><span class="op">.</span><span class="im">jupiter</span><span class="op">.</span><span class="im">api</span><span class="op">.</span><span class="im">Assertions</span><span class="op">.</span><span class="im">assertEquals</span><span class="op">;</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="im">org</span><span class="op">.</span><span class="im">junit</span><span class="op">.</span><span class="im">jupiter</span><span class="op">.</span><span class="im">api</span><span class="op">.</span><span class="im">Test</span><span class="op">;</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> EngineTest <span class="op">{</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">@Test</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span> <span class="fu">teamName</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>        <span class="fu">assertEquals</span><span class="op">(</span><span class="st">&quot;Team &lt;your team name&gt;&quot;</span><span class="op">,</span> <span class="kw">new</span> <span class="fu">Engine</span><span class="op">().</span><span class="fu">teamName</span><span class="op">());</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>One test class per class under test, named after it:
+<code>Engine.java</code> gets <code>EngineTest.java</code>. The test is
+small, but it is a real test and it proves the test toolchain and CI
+work end to end.</p>
+<h2 id="set-up-ci-with-github-actions">5. Set up CI with GitHub
+Actions</h2>
+<p>Create <code>.github/workflows/ci.yml</code>:</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">name</span><span class="kw">:</span><span class="at"> CI</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">on</span><span class="kw">:</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pull_request</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">push</span><span class="kw">:</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">branches</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">main</span><span class="kw">]</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="fu">jobs</span><span class="kw">:</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">build</span><span class="kw">:</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">runs-on</span><span class="kw">:</span><span class="at"> ubuntu-latest</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">steps</span><span class="kw">:</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">uses</span><span class="kw">:</span><span class="at"> actions/checkout@v7</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">uses</span><span class="kw">:</span><span class="at"> actions/setup-java@v5</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">with</span><span class="kw">:</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">distribution</span><span class="kw">:</span><span class="at"> temurin</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">java-version</span><span class="kw">:</span><span class="at"> </span><span class="st">&#39;25&#39;</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">cache</span><span class="kw">:</span><span class="at"> maven</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">run</span><span class="kw">:</span><span class="at"> mvn -B verify</span></span></code></pre></div>
+<p><strong>Requirement:</strong> the workflow runs on every pull request
+and on pushes to <code>main</code>, and shows up as a check on PRs.</p>
+<h2 id="add-the-pull-request-template">6. Add the pull request
+template</h2>
+<p>Create <code>.github/pull_request_template.md</code>:</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode markdown"><code class="sourceCode markdown"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">## What and why</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="fu">## How was it tested?</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="fu">## AI attribution</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Name the AI tools that contributed to this change.</span></code></pre></div>
+<h2 id="protect-the-main-branch">7. Protect the main branch</h2>
+<p>Do Tasks 1–6 as direct pushes to <code>main</code>; then turn on
+protection. In the repository, go to Settings → Branches → Add branch
+protection rule (or a Ruleset) for <code>main</code>:</p>
+<ul>
+<li>Require a pull request before merging, with at least 1 approving
+review.</li>
+<li>Require status checks to pass: select the CI job
+(<code>build</code>). The check only appears in this list after it has
+run at least once, so push something that triggers CI first.</li>
+<li>Block force pushes; apply the rules to administrators too.</li>
+</ul>
+<p><strong>Requirement:</strong> verify the protection works. A direct
+<code>git push origin main</code> must be rejected.</p>
+<h2 id="demonstrate-the-full-loop">8. Demonstrate the full loop</h2>
+<p>Run one complete change through the process, from ticket to merged
+code:</p>
+<ol type="1">
+<li>Open a GitHub issue describing the change, for example “Find a
+better team name”. Note its number; we assume #1 below. Issues are the
+course’s ticket system; the same idea appears in industry as JIRA
+tickets, Linear issues, or Azure Boards work items.</li>
+<li>Create a branch (e.g., <code>fix-team-name</code>).</li>
+<li>Make the change, and reference the issue in the commit message,
+e.g. <code>Better team name (#1)</code>. GitHub links the commit to the
+issue automatically.</li>
+<li>Push the branch and open a pull request; fill in the template, and
+write <code>Fixes #1</code> in the description so the merge closes the
+issue.</li>
+<li>A teammate reviews on GitHub and leaves at least one substantive
+comment or question; the author responds or updates the code.</li>
+<li>Once the review is approved and CI is green, click the “Merge pull
+request” button on the PR page. An approved review and a green check do
+not merge the PR by themselves; someone has to press the button. The
+button offers three strategies: merge commit, squash, or rebase. The
+default merge commit is fine for this course; many industry teams squash
+so that one PR becomes one commit. Then delete the branch, and check
+that issue #1 closed itself.</li>
+</ol>
+<h2 id="cut-release-v0.1">9. Cut release v0.1</h2>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> checkout main <span class="kw">&amp;&amp;</span> <span class="fu">git</span> pull</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> tag <span class="at">-a</span> v0.1 <span class="at">-m</span> <span class="st">&quot;Exercise 1: toolchain baseline&quot;</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> push origin v0.1</span></code></pre></div>
+<p>This creates a tag that the teaching assistant will check out to
+validate the state of your project.</p>
+<h2 id="definition-of-done">Definition of done</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" />Repository exists; all
+team members and the TA have access.</label></li>
+<li><label><input type="checkbox"
+checked="" /><code>mvn clean package</code> succeeds locally on every
+member’s machine.</label></li>
+<li><label><input type="checkbox"
+checked="" /><code>mvn compile exec:java</code> prints the team
+name.</label></li>
+<li><label><input type="checkbox" checked="" />A run produces
+<code>logs/engine.log</code> with at least one well-formed CSV log line
+and no header line.</label></li>
+<li><label><input type="checkbox" checked="" />The <code>teamName</code>
+unit test runs in CI on every PR.</label></li>
+<li><label><input type="checkbox" checked="" /><code>main</code> is
+protected: PR + 1 approving review + green CI required; direct pushes
+rejected.</label></li>
+<li><label><input type="checkbox" checked="" />The PR template is in
+place.</label></li>
+<li><label><input type="checkbox" checked="" />At least one merged PR
+shows a real review conversation and closed a GitHub issue via
+<code>Fixes #N</code>.</label></li>
+<li><label><input type="checkbox" checked="" />Tag <code>v0.1</code> is
+pushed.</label></li>
+</ul>

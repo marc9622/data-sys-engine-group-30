@@ -1,0 +1,263 @@
+<h1 id="exercise-3-parsing-sql-text-into-a-bound-ast">Exercise 3:
+Parsing SQL Text into a Bound AST</h1>
+<p>How to Build Data Systems – Fall 2026</p>
+<p>In this exercise, you put a SQL front end in front of last week’s
+storage engine, as text processing only. SQL text becomes a typed,
+validated AST; nothing executes yet (wiring the AST to the engine is
+week 4). ANTLR generates the lexer and parser from your grammar. You
+need to provide the AST, the visitor, and the binder. No SQL-processing
+libraries are allowed. This exercise builds on your Exercise 2
+repository.</p>
+<p>Every statement your grammar accepts must also run unchanged in
+DuckDB.</p>
+<h2 id="the-sql-subset">1. The SQL subset</h2>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode sql"><code class="sourceCode sql"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span> trips (city STRING, distance <span class="dt">LONG</span>, price <span class="dt">DOUBLE</span>);</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> trips <span class="kw">FROM</span> <span class="st">&#39;trips.csv&#39;</span>;</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="op">*</span> <span class="kw">FROM</span> trips <span class="kw">WHERE</span> distance <span class="op">&gt;</span> <span class="dv">100</span>;</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="op">*</span> <span class="kw">FROM</span> trips;              <span class="co">-- WHERE is optional, as in DuckDB</span></span></code></pre></div>
+<ul>
+<li>Keywords are case-insensitive; identifiers are letters, digits, and
+underscores, starting with a letter or underscore.</li>
+<li>Literals: single-quoted ASCII strings, whole numbers, numbers with a
+decimal point; both numeric forms may be negative. Their Java types
+after parsing are <code>String</code>, <code>Long</code>,
+<code>Double</code>, exactly the constant types <code>select</code>
+demands.</li>
+<li>Comparisons: <code>=</code>, <code>&lt;</code>, <code>&gt;</code>.
+Statements end with <code>;</code>. <code>--</code> starts a comment to
+end of line.</li>
+<li>Out of scope: escaped quotes inside string literals
+(<code>''</code>).</li>
+</ul>
+<h2 id="generate-the-parser-with-antlr">2. Generate the parser with
+ANTLR</h2>
+<p>Add to <code>pom.xml</code>:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">properties</span>&gt;</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">antlr.version</span>&gt;4.13.2&lt;/<span class="kw">antlr.version</span>&gt;</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">properties</span>&gt;</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">groupId</span>&gt;org.antlr&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">artifactId</span>&gt;antlr4-runtime&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">version</span>&gt;${antlr.version}&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">dependency</span>&gt;</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">plugin</span>&gt;</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">groupId</span>&gt;org.antlr&lt;/<span class="kw">groupId</span>&gt;</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">artifactId</span>&gt;antlr4-maven-plugin&lt;/<span class="kw">artifactId</span>&gt;</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">version</span>&gt;${antlr.version}&lt;/<span class="kw">version</span>&gt;</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">configuration</span>&gt;</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">visitor</span>&gt;true&lt;/<span class="kw">visitor</span>&gt;</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">configuration</span>&gt;</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">executions</span>&gt;</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">execution</span>&gt;</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>      &lt;<span class="kw">goals</span>&gt;&lt;<span class="kw">goal</span>&gt;antlr4&lt;/<span class="kw">goal</span>&gt;&lt;/<span class="kw">goals</span>&gt;</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    &lt;/<span class="kw">execution</span>&gt;</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">executions</span>&gt;</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">plugin</span>&gt;</span></code></pre></div>
+<p>The plugin generates a listener but no visitor unless
+<code>&lt;visitor&gt;</code> says so, and Task 3 builds the AST with a
+visitor. Without it the build fails on a missing
+<code>SqlBaseVisitor</code>.</p>
+<p>The grammar lives at
+<code>src/main/antlr4/dk/itu/datasys/sql/Sql.g4</code>; the directory
+path below <code>antlr4/</code> becomes the Java package of the
+generated classes. Generated sources land in
+<code>target/generated-sources/antlr4</code> and join the compile path
+automatically. Never commit ANTLR-generated code.</p>
+<p>Grammar skeleton:</p>
+<pre class="antlr"><code>grammar Sql;
+
+options { caseInsensitive = true; }   // ANTLR ≥ 4.10
+
+script      : (statement &#39;;&#39;)+ EOF ;
+statement   : createTable | copy | select ;
+
+createTable : CREATE TABLE IDENTIFIER &#39;(&#39; columnDef (&#39;,&#39; columnDef)* &#39;)&#39; ;
+columnDef   : IDENTIFIER columnType ;
+columnType  : STRING | LONG | DOUBLE ;
+
+copy        : COPY IDENTIFIER FROM STRING_LITERAL ;
+
+select      : SELECT &#39;*&#39; FROM IDENTIFIER (WHERE predicate)? ;
+predicate   : IDENTIFIER comparison=(&#39;=&#39; | &#39;&lt;&#39; | &#39;&gt;&#39;) literal ;
+literal     : STRING_LITERAL | LONG_LITERAL | DOUBLE_LITERAL ;
+
+// Lexer. Keyword rules MUST precede IDENTIFIER, or IDENTIFIER swallows them.
+CREATE : &#39;CREATE&#39; ;   TABLE : &#39;TABLE&#39; ;   COPY : &#39;COPY&#39; ;   FROM : &#39;FROM&#39; ;
+SELECT : &#39;SELECT&#39; ;   WHERE : &#39;WHERE&#39; ;
+STRING : &#39;STRING&#39; ;   LONG : &#39;LONG&#39; ;   DOUBLE : &#39;DOUBLE&#39; ;
+
+IDENTIFIER      : [A-Z_] [A-Z_0-9]* ;        // caseInsensitive covers a–z
+LONG_LITERAL    : &#39;-&#39;? [0-9]+ ;
+DOUBLE_LITERAL  : &#39;-&#39;? [0-9]+ &#39;.&#39; [0-9]+ ;
+STRING_LITERAL  : &#39;\&#39;&#39; ~[&#39;\r\n]* &#39;\&#39;&#39; ;
+LINE_COMMENT    : &#39;--&#39; ~[\r\n]* -&gt; skip ;
+WS              : [ \t\r\n]+ -&gt; skip ;</code></pre>
+<p>Note that the type keywords
+<code>STRING</code>/<code>LONG</code>/<code>DOUBLE</code> are tokens
+distinct from the literal tokens, and that <code>caseInsensitive</code>
+affects how rules match, not the token text: identifier casing is
+preserved as written.</p>
+<h2 id="build-the-ast">3. Build the AST</h2>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">sealed</span> <span class="kw">interface</span> <span class="bu">Statement</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>        <span class="kw">permits</span> CreateTableStatement<span class="op">,</span> CopyStatement<span class="op">,</span> SelectStatement <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">record</span> <span class="fu">CreateTableStatement</span><span class="op">(</span><span class="bu">String</span> tableName<span class="op">,</span> <span class="bu">List</span><span class="op">&lt;</span>ColumnSpec<span class="op">&gt;</span> columns<span class="op">)</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>        <span class="kw">implements</span> <span class="bu">Statement</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">record</span> <span class="fu">CopyStatement</span><span class="op">(</span><span class="bu">String</span> tableName<span class="op">,</span> <span class="bu">String</span> csvFilePath<span class="op">)</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>        <span class="kw">implements</span> <span class="bu">Statement</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">record</span> <span class="fu">SelectStatement</span><span class="op">(</span><span class="bu">String</span> tableName<span class="op">,</span> Optional<span class="op">&lt;</span><span class="bu">Predicate</span><span class="op">&gt;</span> where<span class="op">)</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>        <span class="kw">implements</span> <span class="bu">Statement</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="kw">record</span> <span class="bu">Predicate</span><span class="op">(</span><span class="bu">String</span> columnName<span class="op">,</span> Comparison comparison<span class="op">,</span> <span class="bu">Object</span> constant<span class="op">)</span> <span class="op">{</span> <span class="op">}</span></span></code></pre></div>
+<p>Reuse <code>ColumnSpec</code>, <code>ColumnType</code>, and
+<code>Comparison</code> from Exercise 2; do not duplicate them. The AST
+speaks the storage API’s vocabulary, which makes next week’s wiring a
+near-trivial mapping. Records also give you generated
+<code>equals</code>, so an expected AST is one <code>assertEquals</code>
+away.</p>
+<p>Build the AST in one visitor class
+(e.g. <code>SqlAstBuilder extends SqlBaseVisitor&lt;Object&gt;</code>).
+Type the literals while building: <code>'Odense'</code> →
+<code>String</code>, <code>12</code> → <code>Long</code>,
+<code>23.5</code> → <code>Double</code>.</p>
+<p>The parser facade:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">final</span> <span class="kw">class</span> SqlParser <span class="op">{</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">/**</span> Parses a whole script of <span class="co">&#39;;&#39;-</span>terminated statements<span class="co">. */</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="bu">List</span><span class="op">&lt;</span><span class="bu">Statement</span><span class="op">&gt;</span> <span class="fu">parse</span><span class="op">(</span><span class="bu">String</span> sqlText<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">final</span> <span class="kw">class</span> SqlParseException <span class="kw">extends</span> <span class="bu">RuntimeException</span> <span class="op">{</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">line</span><span class="op">()</span>   <span class="op">{</span> <span class="co">/* 1-based */</span> <span class="op">}</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">int</span> <span class="fu">column</span><span class="op">()</span> <span class="op">{</span> <span class="co">/* 0-based, ANTLR&#39;s convention */</span> <span class="op">}</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Out of the box, ANTLR prints syntax errors to stderr and tries to
+recover. Call <code>removeErrorListeners()</code> on both lexer and
+parser and register a listener that throws
+<code>SqlParseException</code> at the first syntax error.</p>
+<h2 id="the-binder">4. The binder</h2>
+<p>The binder needs schema lookups, so <code>StorageEngine</code> grows
+one read-only accessor:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co">/**</span> The table<span class="co">&#39;</span>s schema<span class="co">,</span> in column order<span class="co">. </span>Throws IllegalArgumentException if unknown<span class="co">.</span> <span class="co">*/</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="bu">List</span><span class="op">&lt;</span>ColumnSpec<span class="op">&gt;</span> <span class="fu">schema</span><span class="op">(</span><span class="bu">String</span> tableName<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">final</span> <span class="kw">class</span> <span class="bu">Binder</span> <span class="op">{</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="bu">Binder</span><span class="op">(</span>StorageEngine engine<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">/**</span> Validates s against the catalog<span class="co">;</span> throws IllegalArgumentException on the first violation<span class="co">. */</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="dt">void</span> <span class="fu">bind</span><span class="op">(</span><span class="bu">Statement</span> s<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Binding checks:</p>
+<ul>
+<li><code>SELECT</code>: the table exists; if a <code>WHERE</code> is
+present, the column exists and the constant’s Java type matches the
+column type.</li>
+<li><code>COPY</code>: the table exists. (Whether the file exists is
+execution’s concern.)</li>
+<li><code>CREATE TABLE</code>: non-empty column list, no duplicate
+names. Whether the table already exists is left to execution, where the
+check can be made atomically.</li>
+</ul>
+<p>Binder errors throw <code>IllegalArgumentException</code>, the same
+family as the engine API.</p>
+<h2 id="pretty-printer-and-runnable-demo">5. Pretty-printer and runnable
+demo</h2>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">public</span> <span class="dt">final</span> <span class="kw">class</span> SqlPrinter <span class="op">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">/**</span> Renders a statement back to SQL text that parses to an equal statement<span class="co">. */</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">public</span> <span class="bu">String</span> <span class="fu">print</span><span class="op">(</span><span class="bu">Statement</span> s<span class="op">)</span> <span class="op">{</span> <span class="co">/* ... */</span> <span class="op">}</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The printer renders from the AST, not from the input text: it never
+keeps the original string around. That is what makes it evidence that
+the parse captured everything. Normalization is expected and welcome,
+for instance uppercased keywords and a dropped comment, as long as
+<code>parse(print(s))</code> gives back an equal statement (test 6).</p>
+<p><strong>Requirement:</strong> <code>mvn compile exec:java</code>,
+with no further arguments, parses the four statements from Task 1 and
+prints their pretty-printed form, one statement per line. This replaces
+Exercise 2’s golden-query printout. Nothing executes yet.</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode sql"><code class="sourceCode sql"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span> trips (city STRING, distance <span class="dt">LONG</span>, price <span class="dt">DOUBLE</span>);</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> trips <span class="kw">FROM</span> <span class="st">&#39;trips.csv&#39;</span>;</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="op">*</span> <span class="kw">FROM</span> trips <span class="kw">WHERE</span> distance <span class="op">&gt;</span> <span class="dv">100</span>;</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="op">*</span> <span class="kw">FROM</span> trips;</span></code></pre></div>
+<h2 id="logging">6. Logging</h2>
+<p>At least one log line per <code>parse</code> call: the success line
+at <code>debug</code>, the failure line at <code>error</code>:</p>
+<pre><code>statements=3 durationMs=2
+failed line=1 col=22 durationMs=0</code></pre>
+<h2 id="required-tests-junit-6">7. Required tests (JUnit 6)</h2>
+<p>Unit (parser):</p>
+<ol type="1">
+<li>Each statement shape, including <code>SELECT</code> with and without
+<code>WHERE</code>, parses to the expected AST.</li>
+<li>Literal typing: <code>12</code> → <code>Long</code>,
+<code>12.0</code> → <code>Double</code>, <code>'12'</code> →
+<code>String</code>; negative <code>-1</code> and
+<code>-1.5</code>.</li>
+<li>Keyword case-insensitivity: <code>select * from trips;</code>
+parses; identifier casing is preserved.</li>
+<li>At least five malformed inputs, each asserting line and column:
+missing <code>;</code>, unbalanced parens, unknown type name
+(<code>city TEXT</code>), unterminated string literal, missing
+<code>FROM</code>.</li>
+<li>Comments and whitespace are skipped.</li>
+</ol>
+<p>Unit (pretty-printer):</p>
+<ol start="6" type="1">
+<li>The <code>parse(print(s))</code> round-trip property over every
+statement shape.</li>
+</ol>
+<p>Integration (binder, engine on <code>@TempDir</code>):</p>
+<ol start="7" type="1">
+<li>Valid statements bind; unknown table, unknown column,
+type-mismatched constant (<code>distance = 'x'</code>), and duplicate
+columns in <code>CREATE TABLE</code> each throw
+<code>IllegalArgumentException</code>.</li>
+</ol>
+<h2 id="cut-release-v0.3">8. Cut release v0.3</h2>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> checkout main <span class="kw">&amp;&amp;</span> <span class="fu">git</span> pull</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> tag <span class="at">-a</span> v0.3 <span class="at">-m</span> <span class="st">&quot;Exercise 3: SQL front end&quot;</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> push origin v0.3</span></code></pre></div>
+<p>This creates a tag that the teaching assistant will check out to
+validate the state of your project.</p>
+<h2 id="definition-of-done">Definition of done</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" />ANTLR wired into the Maven build;
+generated sources not committed.</label></li>
+<li><label><input type="checkbox" />Grammar covers the subset:
+case-insensitive keywords, optional <code>WHERE</code>, comments,
+negative literals.</label></li>
+<li><label><input type="checkbox" /><code>SqlParser.parse</code> returns
+<code>List&lt;Statement&gt;</code> or throws
+<code>SqlParseException</code> with line and column.</label></li>
+<li><label><input type="checkbox" />AST records reuse
+<code>ColumnSpec</code>, <code>ColumnType</code>,
+<code>Comparison</code> from week 2.</label></li>
+<li><label><input type="checkbox" />Binder validates against the catalog
+via the new <code>schema(...)</code> accessor.</label></li>
+<li><label><input type="checkbox" />Pretty-printer with the round-trip
+property test.</label></li>
+<li><label><input type="checkbox" /><code>mvn compile exec:java</code>
+prints the pretty-printed AST of the four Task 1
+statements.</label></li>
+<li><label><input type="checkbox" />All required tests green in
+CI.</label></li>
+<li><label><input type="checkbox" />All PRs reviewed and merged into
+main, which is branch-protected.</label></li>
+<li><label><input type="checkbox" />Tag <code>v0.3</code> is
+pushed.</label></li>
+</ul>
+<h2 id="outlook">Outlook</h2>
+<p>In week 4, a planner and executor turn bound ASTs into calls to the
+week 2 API, and the engine gets a SQL front door that runs whole
+<code>.sql</code> scripts. The grammar keeps growing later:
+<code>DELETE</code> in Part 2, <code>JOIN</code> in Part 3.</p>
