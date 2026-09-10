@@ -227,6 +227,19 @@ public final class StorageEngine {
         return out;
     }
 
+    /**
+     */
+    public List<ColumnSpec> schema(String tableName) {
+        requireNonNull(tableName);
+
+        synchronized (catalog) {
+            TableMeta table = catalog.tables.get(tableName);
+            if (table == null)
+                throw new IllegalArgumentException("unknown table: " + tableName);
+            return List.copyOf(table.columns);
+        }
+    }
+
     public void clearAllData() {
         synchronized (catalog) {
             for (TableMeta table : catalog.tables.values()) {
