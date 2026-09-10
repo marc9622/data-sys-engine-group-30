@@ -11,6 +11,7 @@
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <log4j.version>2.26.1</log4j.version>
+        <antlr.version>4.13.2</antlr.version>
     </properties>
     <dependencies>
         <!-- Logging API: your code compiles only against SLF4J -->
@@ -45,6 +46,11 @@
             <artifactId>jackson-databind</artifactId>
             <version>2.15.2</version>
         </dependency>
+        <dependency>
+            <groupId>org.antlr</groupId>
+            <artifactId>antlr4-runtime</artifactId>
+            <version>${antlr.version}</version>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
@@ -56,6 +62,21 @@
                 <configuration>
                     <release>25</release>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.antlr</groupId>
+                <artifactId>antlr4-maven-plugin</artifactId>
+                <version>${antlr.version}</version>
+                <configuration>
+                    <visitor>true</visitor>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>antlr4</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <!-- Runs the JUnit tests during `mvn test` / `mvn package` / `mvn verify` -->
             <plugin>
