@@ -1,16 +1,13 @@
 package dk.itu.datasys;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
+import dk.itu.datasys.Spec.*;
 
 class SqlParserTest {
 
@@ -57,5 +54,27 @@ class SqlParserTest {
 
         assertEquals(1, ex2.line());
         assertEquals(42, ex2.column());
+    }
+
+    @Test
+    void caseInsensitiveKeywords() {
+        SqlParserFacade parser = new SqlParserFacade();
+
+        List<Statement> statements = parser.parse(
+                "cReAtE tAbLe trips (city StRiNg, distance LoNg, price DoUbLe);" +
+                "CoPy trips FrOm 'trips.csv';" +
+                "SeLeCt * FrOm trips WhErE distance > 100;");
+
+        assertEquals(3, statements.size());
+        assertEquals(new Statement.CreateTable("trips", List.of(
+                new ColumnSpec("city", ColumnType.STRING),
+                new ColumnSpec("distance", ColumnType.LONG),
+                new ColumnSpec("price", ColumnType.DOUBLE))), statements.get(0));
+        assertEquals(new Statement.Copy("trips", "trips.csv"), statements.get(1));
+        assertEquals(new Statement.Select("trips",
+                Optional.of(
+                    new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L)
+                )),
+                statements.get(2));
     }
 }
