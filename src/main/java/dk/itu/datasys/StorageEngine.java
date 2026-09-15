@@ -228,6 +228,8 @@ public final class StorageEngine {
     }
 
     /**
+     * Returns the schema (list of columns) for the given table.
+     * @param tableName the name of the table
      */
     public List<ColumnSpec> schema(String tableName) {
         requireNonNull(tableName);
