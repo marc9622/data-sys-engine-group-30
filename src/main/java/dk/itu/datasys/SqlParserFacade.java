@@ -21,7 +21,7 @@ public final class SqlParserFacade {
     public List<Statement> parse(String sqlText) {
         Objects.requireNonNull(sqlText, "sqlText");  
 
-        long start = System.currentTimeMillis(); // this line is for measuring the duration of the parsing process beca
+        long start = System.currentTimeMillis(); // this line is for measuring the duration of the parsing process
         try {
             SqlLexer lexer = new SqlLexer(CharStreams.fromString(sqlText));
             lexer.removeErrorListeners();
