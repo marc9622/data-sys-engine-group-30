@@ -41,19 +41,19 @@ class SqlParserTest {
         SqlParserFacade parser = new SqlParserFacade();
 
         SqlParseException ex = assertThrows(SqlParseException.class, () ->
-            parser.parse("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE"));
+                parser.parse("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE"));
 
         assertEquals(1, ex.line());
         assertEquals(60, ex.column());
 
         SqlParseException ex1 = assertThrows(SqlParseException.class, () ->
-            parser.parse("CREATE TABL trips (city STRING, distance LONG, price DOUBLE);"));
+                parser.parse("CREATE TABL trips (city STRING, distance LONG, price DOUBLE);"));
 
         assertEquals(1, ex1.line());
         assertEquals(7, ex1.column());
 
          SqlParseException ex2 = assertThrows(SqlParseException.class, () ->
-            parser.parse("CREATE TABLE trips (city STRING, distance FLOAT, price DOUBLE);"));
+                 parser.parse("CREATE TABLE trips (city STRING, distance FLOAT, price DOUBLE);"));
 
         assertEquals(1, ex2.line());
         assertEquals(42, ex2.column());
