@@ -38,4 +38,24 @@ class SqlPrinterTest {
         assertEquals("SELECT * FROM trips;",
                 printer.print(selectWithoutWhere));
     }
+
+    @Test
+    void parsePrintRoundTripHoldsForEveryStatementShape() {
+        SqlParserFacade parser = new SqlParserFacade();
+        SqlPrinter printer = new SqlPrinter();
+
+        List<Statement> statements = List.of(
+                new Statement.CreateTable("trips", List.of(
+                        new ColumnSpec("city", ColumnType.STRING),
+                        new ColumnSpec("distance", ColumnType.LONG),
+                        new ColumnSpec("price", ColumnType.DOUBLE))),
+                new Statement.Copy("trips", "trips.csv"),
+                new Statement.Select("trips",
+                        Optional.of(new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L))),
+                new Statement.Select("trips", Optional.empty()));
+
+        for (Statement statement : statements) {
+            assertEquals(statement, parser.parse(printer.print(statement)).getFirst());
+        }
+    }
 }
