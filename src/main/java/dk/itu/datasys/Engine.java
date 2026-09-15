@@ -1,52 +1,29 @@
 package dk.itu.datasys;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
-import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
+import java.util.Optional;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Spec.Comparison;
 
 public final class Engine {
-    private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
+    public static void main(String[] args) {
+        SqlPrinter printer = new SqlPrinter();
 
-    public static void main(String[] args) throws Exception {
-        MDC.put("sessionId", UUID.randomUUID().toString());
-        MDC.put("statementNumber", "0");
-        LOGGER.debug("engine started");
+        List<Statement> statements = List.of(
+                new Statement.CreateTable("trips", List.of(
+                        new ColumnSpec("city", ColumnType.STRING),
+                        new ColumnSpec("distance", ColumnType.LONG),
+                        new ColumnSpec("price", ColumnType.DOUBLE))),
+                new Statement.Copy("trips", "trips.csv"),
+                new Statement.Select("trips",
+                        Optional.of(new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L))),
+                new Statement.Select("trips", Optional.empty())
+        );
 
-        Path csv = Path.of("src/test/resources/trips.csv");
-        if (!Files.exists(csv))
-            throw new IllegalArgumentException("golden CSV not found: " + csv.toAbsolutePath());
-
-        Path dataDirectory = switch (args.length) {
-            case 0 -> Files.createTempDirectory("datasys-demo");
-            case 1 -> Path.of(args[0]);
-            default -> throw new IllegalArgumentException("expected 0 or 1 arguments, got " + args.length);
-        };
-        StorageEngine storage = new StorageEngine(dataDirectory);
-        storage.createTable("trips", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("distance", ColumnType.LONG),
-                new ColumnSpec("price", ColumnType.DOUBLE)));
-        storage.copyFromCsvFile("trips", csv.toString());
-
-        printResults("distance GREATER_THAN 100", storage.select("trips", "distance", Comparison.GREATER_THAN, 100L));
-        printResults("city EQUALS Copenhagen", storage.select("trips", "city", Comparison.EQUALS, "Copenhagen"));
-        printResults("price LESS_THAN 50.0", storage.select("trips", "price", Comparison.LESS_THAN, 50.0d));
-
-        LOGGER.debug("engine stopped");
-    }
-
-    private static void printResults(String predicate, List<Object[]> rows) {
-        System.out.println(predicate + ":" + "("  + rows.size() + " rows)");
-        for (Object[] row : rows)
-            System.out.println(Arrays.toString(row));
+        for (Statement statement : statements) {
+            System.out.println(printer.print(statement));
+        }
     }
 }
