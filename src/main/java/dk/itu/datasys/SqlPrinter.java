@@ -1,6 +1,5 @@
 package dk.itu.datasys;
 
-import java.util.List;
 import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
