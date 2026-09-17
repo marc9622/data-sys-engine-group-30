@@ -7,9 +7,7 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
+import dk.itu.datasys.Spec.*;
 
 class SqlPrinterTest {
 
