@@ -21,7 +21,7 @@ class SqlParserTest {
 
     @Test
     void parsesCreateCopyAndSelectStatements() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);" +
@@ -44,7 +44,7 @@ class SqlParserTest {
 
     @Test
     void parsesNumbersCorrect() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);" +
@@ -77,7 +77,7 @@ class SqlParserTest {
 
     @Test
     void throwsSqlParseExceptionWithLineAndColumn() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         // Missing right-paren
         SqlParseException ex = assertThrows(SqlParseException.class, () ->
@@ -131,7 +131,7 @@ class SqlParserTest {
 
     @Test
     void parsesCaseInsensitiveStatements() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "cReAtE tAbLe trips (city StRiNg, distance LoNg, price DoUbLe);" +
@@ -152,7 +152,7 @@ class SqlParserTest {
 
     @Test
     void parsesCaseSensitiveIdentifiers() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "CREATE TABLE TrIpS (city STRING, Distance LONG, PRICE DOUBLE);" +
@@ -197,7 +197,7 @@ class SqlParserTest {
 
     @Test
     void parsesStatementsWithComments() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "-- This is a comment\n" +
@@ -223,7 +223,7 @@ class SqlParserTest {
 
     @Test
     void parsesNegativeNumbers() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);" +

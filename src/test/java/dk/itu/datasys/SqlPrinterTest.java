@@ -41,7 +41,7 @@ class SqlPrinterTest {
 
     @Test
     void parsePrintRoundTripHoldsForEveryStatementShape() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
         SqlPrinter printer = new SqlPrinter();
 
         List<Statement> statements = List.of(

@@ -13,9 +13,9 @@ import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.sql.SqlAstBuilder;
 import dk.itu.datasys.sql.SqlLexer;
-import dk.itu.datasys.sql.SqlParser;
+import dk.itu.datasys.sql.SqlParser.ScriptContext;
 
-public final class SqlParserFacade {
+public final class SqlParser {
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlParser.class);
 
     public List<Statement> parse(String sqlText) {
@@ -28,11 +28,11 @@ public final class SqlParserFacade {
             lexer.addErrorListener(ThrowingErrorListener.INSTANCE);
 
             CommonTokenStream tokens = new CommonTokenStream(lexer);
-            SqlParser parser = new SqlParser(tokens);
+            var parser = new dk.itu.datasys.sql.SqlParser(tokens);
             parser.removeErrorListeners();
             parser.addErrorListener(ThrowingErrorListener.INSTANCE);
 
-            SqlParser.ScriptContext script = parser.script(); 
+            ScriptContext script = parser.script(); 
             @SuppressWarnings("unchecked")
             List<Statement> statements = (List<Statement>) new SqlAstBuilder().visit(script);
 
