@@ -8,6 +8,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.StorageEngine;
 
 public final class ScanOperator implements Operator {
@@ -24,6 +25,11 @@ public final class ScanOperator implements Operator {
         this.engine = Objects.requireNonNull(engine);
         this.tableName = Objects.requireNonNull(tableName);
         this.partitions = List.copyOf(partitions);
+    }
+
+    @Override
+    public List<ColumnSpec> schema() {
+        return engine.schema(tableName);
     }
 
     @Override

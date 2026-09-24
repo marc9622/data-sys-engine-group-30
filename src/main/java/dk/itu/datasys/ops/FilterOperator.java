@@ -1,11 +1,12 @@
 package dk.itu.datasys.ops;
 
+import java.util.List;
 import java.util.Objects;
-import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Statement.Select.Predicate;
 
@@ -28,29 +29,33 @@ public final class FilterOperator extends Operator.Intermediate {
     }
 
     @Override
-    public void openIntermediate() {
+    protected void openIntermediate() {
         rowsIn = 0;
         rowsOut = 0;
     }
 
     @Override
-    public Object[] nextIntermediate(Supplier<Object[]> next) {
-        Object[] row = next(); 
+    public List<ColumnSpec> schema() {
+        return childSchema();
+    }
+
+    @Override
+    protected Object[] nextIntermediate() {
+        Object[] row = childNext(); 
         while (row!= null) {
             rowsIn++;
             if (predicate.matches(row[columnIndex], columnType)) {
                 rowsOut++;
                 return row;
             }
-            row = next();
+            row = childNext();
         }
         return null;
     }
 
     @Override
-    public void closeIntermediate() {
+    protected void closeIntermediate() {
         LOGGER.debug("column={} comparison={} constant={} rowsIn={} rowsOut={}",
                 predicate.columnName(), predicate.comparison(), predicate.constant(), rowsIn, rowsOut);
     }
-
 }

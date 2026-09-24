@@ -1,7 +1,9 @@
 package dk.itu.datasys.ops;
 
+import java.util.List;
 import java.util.Objects;
-import java.util.function.Supplier;
+
+import dk.itu.datasys.Spec.ColumnSpec;
 
 public sealed interface Operator permits Operator.Intermediate, ScanOperator {
 
@@ -10,6 +12,11 @@ public sealed interface Operator permits Operator.Intermediate, ScanOperator {
      * Must be called before next() is called.
      */
     void open();
+
+    /**
+     * @return The schema of the operator's output rows, in column order.
+     */
+    List<ColumnSpec> schema();
 
     /**
      * @return The next row in schema column order, or null when exhausted
@@ -22,6 +29,7 @@ public sealed interface Operator permits Operator.Intermediate, ScanOperator {
      */
     void close();
 
+
     public static non-sealed abstract class Intermediate implements Operator {
         private final Operator child;
 
@@ -29,27 +37,30 @@ public sealed interface Operator permits Operator.Intermediate, ScanOperator {
             this.child = Objects.requireNonNull(child);
         }
 
+
+        protected final List<ColumnSpec> childSchema() {
+            return child.schema();
+        }
+
+        protected final Object[] childNext() {
+            return child.next();
+        }
+
+
         @Override
         public final void open() {
             openIntermediate();
             child.open();
         }
 
-        /**
-         * Intializes or resets the operator's internal state.
-         * Must be called before next() is called.
-         */
         protected abstract void openIntermediate();
 
         @Override
         public final Object[] next() {
-            return nextIntermediate(child::next);
+            return nextIntermediate();
         }
 
-        /**
-         * @return The next row in schema column order, or null when exhausted
-         */
-        protected abstract Object[] nextIntermediate(Supplier<Object[]> next);
+        protected abstract Object[] nextIntermediate();
 
         @Override
         public final void close() {
@@ -57,10 +68,6 @@ public sealed interface Operator permits Operator.Intermediate, ScanOperator {
             child.close();
         }
 
-        /**
-         * Frees any resources held by the operator.
-         * Must be called after next() returns null.
-         */
         protected abstract void closeIntermediate();
     }
 }

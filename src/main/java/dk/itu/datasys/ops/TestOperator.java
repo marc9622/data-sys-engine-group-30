@@ -3,11 +3,13 @@ package dk.itu.datasys.ops;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Supplier;
+
+import dk.itu.datasys.Spec.ColumnSpec;
 
 public class TestOperator extends Operator.Intermediate {
     private final List<Object[]> rowsExpected;
     private int rowsCurrent;
+    private boolean isOpen = false;
 
     public TestOperator(Operator actual, List<Object[]> rowsExpected) {
         super(actual);
@@ -16,11 +18,18 @@ public class TestOperator extends Operator.Intermediate {
 
     @Override
     protected void openIntermediate() {
-        // No-op
+        isOpen = true;
     }
 
     @Override
-    protected Object[] nextIntermediate(Supplier<Object[]> next) {
+    public List<ColumnSpec> schema() {
+        return childSchema();
+    }
+
+    @Override
+    protected Object[] nextIntermediate() {
+        assertIsOpen();
+
         Object[] rowActual = next();
         if (rowsCurrent >= rowsExpected.size()) {
             throw new AssertionError("More rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
@@ -36,6 +45,13 @@ public class TestOperator extends Operator.Intermediate {
 
     @Override
     protected void closeIntermediate() {
-        // No-op
+        assertIsOpen();
+        isOpen = false;
+    }
+
+    private void assertIsOpen() {
+        if (!isOpen) {
+            throw new IllegalStateException("Operator is not open. Call open() before calling next() or close().");
+        }
     }
 }

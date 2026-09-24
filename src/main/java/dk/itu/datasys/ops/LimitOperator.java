@@ -1,9 +1,11 @@
 package dk.itu.datasys.ops;
 
-import java.util.function.Supplier;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import dk.itu.datasys.Spec.ColumnSpec;
 
 public final class LimitOperator extends Operator.Intermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
@@ -19,21 +21,26 @@ public final class LimitOperator extends Operator.Intermediate {
     }
 
     @Override
-    public void openIntermediate() {
+    protected void openIntermediate() {
         rowsCurrent = 0;
     }
 
     @Override
-    public Object[] nextIntermediate(Supplier<Object[]> next) {
+    public List<ColumnSpec> schema() {
+        return childSchema();
+    }
+
+    @Override
+    protected Object[] nextIntermediate() {
         if (rowsCurrent >= rowsMax) {
             return null;
         }
         rowsCurrent++;
-        return next();
+        return childNext();
     }
 
     @Override
-    public void closeIntermediate() {
+    protected void closeIntermediate() {
         LOGGER.debug("rowsMax={} rowsCurrent={}", rowsMax, rowsCurrent);
     }
 }
