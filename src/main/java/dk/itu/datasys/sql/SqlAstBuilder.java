@@ -3,9 +3,10 @@ package dk.itu.datasys.sql;
 import java.util.List;
 import java.util.Optional;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
+import org.antlr.v4.runtime.tree.TerminalNode;
+
+import dk.itu.datasys.Spec.*;
+import dk.itu.datasys.SqlParseException;
 import dk.itu.datasys.Statement;
 
 public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
@@ -79,13 +80,24 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
     // Converts a SQL literal to String, Long, or Double.
     @Override
     public Object visitLiteral(SqlParser.LiteralContext context) {
-        if (context.STRING_LITERAL() != null) {
-            return unquote(context.STRING_LITERAL().getText());
+        TerminalNode literal;
+        if ((literal = context.STRING_LITERAL()) != null) {
+            return unquote(literal.getText());
         }
-        if (context.LONG_LITERAL() != null) {
-            return Long.valueOf(context.LONG_LITERAL().getText());
+        try {
+            if ((literal = context.LONG_LITERAL()) != null) {
+                return Long.valueOf(literal.getText());
+            }
+            if ((literal = context.DOUBLE_LITERAL()) != null) {
+                double value = Double.valueOf(literal.getText());
+                if (!Double.isFinite(value))
+                    throw new SqlParseException("Double literal `" + literal.getText() + "` out of range: ", literal.getSymbol());
+                return value;
+            }
+        } catch (NumberFormatException e) {
+            throw new SqlParseException(e, literal.getSymbol());
         }
-        return Double.valueOf(context.DOUBLE_LITERAL().getText());
+        throw new IllegalArgumentException("Unknown literal: `" + context.getText() + "`");
     }
 
     // Maps a SQL comparison operator to the Comparison enum.
