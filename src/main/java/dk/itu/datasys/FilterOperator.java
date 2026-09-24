@@ -1,6 +1,7 @@
 package dk.itu.datasys;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,10 +9,9 @@ import org.slf4j.LoggerFactory;
 import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Statement.Select.Predicate;
 
-public final class FilterOperator implements Operator {
+public final class FilterOperator extends IntermediateOperator {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
 
-    private final Operator child;
     private final Predicate predicate;
     private final int columnIndex;
     private final ColumnType columnType;
@@ -19,7 +19,7 @@ public final class FilterOperator implements Operator {
     private int rowsOut;
 
     public FilterOperator(Operator child, Predicate predicate, int columnIndex, ColumnType columnType) {
-        this.child = Objects.requireNonNull(child);
+        super(child);
         this.predicate = Objects.requireNonNull(predicate);
         this.columnType = Objects.requireNonNull(columnType);
         if (columnIndex < 0)
@@ -28,29 +28,27 @@ public final class FilterOperator implements Operator {
     }
 
     @Override
-    public void open() {
+    public void openIntermediate() {
         rowsIn = 0;
         rowsOut = 0;
-        child.open();
     }
 
     @Override
-    public Object[] next() {
-        Object[] row = child.next(); 
+    public Object[] nextIntermediate(Supplier<Object[]> next) {
+        Object[] row = next(); 
         while (row!= null) {
             rowsIn++;
             if (predicate.matches(row[columnIndex], columnType)) {
                 rowsOut++;
                 return row;
             }
-            row = child.next();
+            row = next();
         }
         return null;
     }
 
     @Override
-    public void close() {
-        child.close();
+    public void closeIntermediate() {
         LOGGER.debug("column={} comparison={} constant={} rowsIn={} rowsOut={}",
                 predicate.columnName(), predicate.comparison(), predicate.constant(), rowsIn, rowsOut);
     }

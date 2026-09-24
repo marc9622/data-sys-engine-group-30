@@ -49,7 +49,6 @@ public final class ScanOperator implements Operator {
     @Override
     public void close() {
         LOGGER.debug("table={} partitions={} rowsOut={}", tableName, partitions.size(), rowsOut);
-
     }
 
 }
