@@ -1,11 +1,11 @@
-package dk.itu.datasys;
+package dk.itu.datasys.ops;
 
 import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public final class LimitOperator extends IntermediateOperator {
+public final class LimitOperator extends Operator.Intermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
 
     private final int rowsMax;

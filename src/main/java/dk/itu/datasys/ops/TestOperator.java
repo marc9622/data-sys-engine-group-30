@@ -1,11 +1,11 @@
-package dk.itu.datasys;
+package dk.itu.datasys.ops;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-public class TestOperator extends IntermediateOperator {
+public class TestOperator extends Operator.Intermediate {
     private final List<Object[]> rowsExpected;
     private int rowsCurrent;
 

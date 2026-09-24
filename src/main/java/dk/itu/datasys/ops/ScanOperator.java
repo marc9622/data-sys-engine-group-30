@@ -1,4 +1,4 @@
-package dk.itu.datasys;
+package dk.itu.datasys.ops;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -7,6 +7,8 @@ import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import dk.itu.datasys.StorageEngine;
 
 public final class ScanOperator implements Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(ScanOperator.class);

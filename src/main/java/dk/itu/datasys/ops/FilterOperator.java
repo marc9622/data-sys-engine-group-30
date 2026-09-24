@@ -1,4 +1,4 @@
-package dk.itu.datasys;
+package dk.itu.datasys.ops;
 
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Statement.Select.Predicate;
 
-public final class FilterOperator extends IntermediateOperator {
+public final class FilterOperator extends Operator.Intermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
 
     private final Predicate predicate;
