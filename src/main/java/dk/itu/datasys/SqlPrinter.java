@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import java.math.BigDecimal;
 import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
@@ -77,10 +78,11 @@ public final class SqlPrinter {
             return "'" + escapeSqlString(s) + "'";
         }
         if (value instanceof Long l) {
-            return Long.toString(l);
+            return l.toString();
         }
         if (value instanceof Double d) {
-            return Double.toString(d);
+            String s = new BigDecimal(d).toPlainString();
+            return s.contains(".") ? s : s + ".0";
         }
         throw new IllegalArgumentException("unsupported literal type: " + value);
     }

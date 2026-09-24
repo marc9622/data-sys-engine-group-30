@@ -21,7 +21,7 @@ public final class SqlParser {
     public List<Statement> parse(String sqlText) {
         Objects.requireNonNull(sqlText, "sqlText");  
 
-        long start = System.currentTimeMillis(); // this line is for measuring the duration of the parsing process
+        long start = System.currentTimeMillis();
         try {
             SqlLexer lexer = new SqlLexer(CharStreams.fromString(sqlText));
             lexer.removeErrorListeners();
@@ -56,7 +56,7 @@ public final class SqlParser {
                                 int charPositionInLine,
                                 String msg,
                                 RecognitionException e) {
-            throw new SqlParseException("line " + line + ":" + charPositionInLine + " " + msg, line, charPositionInLine);
+            throw new SqlParseException(msg, line, charPositionInLine);
         }
     }
 }
