@@ -11,8 +11,6 @@ import java.nio.file.Path;
 import java.util.*;
 import static java.util.Objects.requireNonNull;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,12 +47,6 @@ public final class StorageEngine {
         if (Files.exists(catalogPath)) {
             try {
                 this.catalog = mapper.readValue(catalogPath.toFile(), Catalog.class);
-
-                for (TableMeta table : catalog.tables.values()) {
-                    for (PartitionMeta partition : table.partitions) {
-                        loadPartitionStats(partition, table.columns);
-                    }
-                }
             } catch (Exception e) {
                 throw new RuntimeException("failed to read catalog", e);
             }
@@ -239,6 +231,20 @@ public final class StorageEngine {
             if (table == null)
                 throw new IllegalArgumentException("unknown table: " + tableName);
             return List.copyOf(table.columns);
+        }
+    }
+
+    /**
+     * Returns the table's partition metadata without reading partition data.
+     */
+    public List<PartitionMeta> partitions(String tableName) {
+        requireNonNull(tableName);
+
+        synchronized (catalog) {
+            TableMeta table = catalog.tables.get(tableName);
+            if (table == null)
+                throw new IllegalArgumentException("unknown table: " + tableName);
+            return List.copyOf(table.partitions);
         }
     }
 
@@ -446,17 +452,6 @@ public final class StorageEngine {
             partition.maxs.add(decodeValue(in, column.type()));
         }
     }
-
-    private void loadPartitionStats(PartitionMeta partition, List<ColumnSpec> columns) throws IOException {
-        Path partFile = dataDir.resolve(partition.fileName);
-        try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
-            int rows = in.readInt();
-            if (rows != partition.rowCount)
-                throw new IOException("partition header does not match catalog: " + partFile);
-            readPartitionStats(in, columns, partition);
-        }
-    }
-
 
     void readPartition(TableMeta table, PartitionMeta partition, Comparison comparison, Object constant, int colIdx, ColumnType colType, List<Object[]> out) {
         Path partFile = dataDir.resolve(partition.fileName);
