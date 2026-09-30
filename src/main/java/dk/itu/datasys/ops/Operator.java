@@ -5,7 +5,7 @@ import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 
-public sealed interface Operator permits Operator.Intermediate, ScanOperator {
+public sealed interface Operator permits Operator.Intermediate, ScanOperator, MockOperator {
 
     /**
      * Intializes or resets the operator's internal state.
@@ -49,8 +49,8 @@ public sealed interface Operator permits Operator.Intermediate, ScanOperator {
 
         @Override
         public final void open() {
-            openIntermediate();
             child.open();
+            openIntermediate();
         }
 
         protected abstract void openIntermediate();
