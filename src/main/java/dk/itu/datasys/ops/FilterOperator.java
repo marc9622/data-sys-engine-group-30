@@ -15,14 +15,14 @@ public final class FilterOperator extends Operator.Intermediate {
 
     private final Predicate predicate;
     private final int columnIndex;
-    private final ColumnType columnType;
+    private ColumnType columnType;
     private int rowsIn;
     private int rowsOut;
 
-    public FilterOperator(Operator child, Predicate predicate, int columnIndex, ColumnType columnType) {
+    public FilterOperator(Operator child, Predicate predicate, int columnIndex) {
         super(child);
         this.predicate = Objects.requireNonNull(predicate);
-        this.columnType = Objects.requireNonNull(columnType);
+
         if (columnIndex < 0)
             throw new IllegalArgumentException("column index must be non-negative");
         this.columnIndex = columnIndex;
@@ -32,6 +32,7 @@ public final class FilterOperator extends Operator.Intermediate {
     protected void openIntermediate() {
         rowsIn = 0;
         rowsOut = 0;
+        columnType = childSchema().get(columnIndex).type();
     }
 
     @Override

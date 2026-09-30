@@ -6,12 +6,12 @@ import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 
-public class TestOperator extends Operator.Intermediate {
+public class AssertOperator extends Operator.Intermediate {
     private final List<Object[]> rowsExpected;
-    private int rowsCurrent;
+    private int rowsCurrent = 0;
     private boolean isOpen = false;
 
-    public TestOperator(Operator actual, List<Object[]> rowsExpected) {
+    public AssertOperator(Operator actual, List<Object[]> rowsExpected) {
         super(actual);
         this.rowsExpected = Objects.requireNonNull(rowsExpected);
     }
@@ -19,6 +19,7 @@ public class TestOperator extends Operator.Intermediate {
     @Override
     protected void openIntermediate() {
         isOpen = true;
+        rowsCurrent = 0;
     }
 
     @Override
@@ -30,15 +31,20 @@ public class TestOperator extends Operator.Intermediate {
     protected Object[] nextIntermediate() {
         assertIsOpen();
 
-        Object[] rowActual = next();
-        if (rowsCurrent >= rowsExpected.size()) {
-            throw new AssertionError("More rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
+        Object[] rowActual = childNext();
+        if (rowActual == null) {
+            if (rowsCurrent != rowsExpected.size())
+                throw new AssertionError("Fewer rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
+
+            return null;
         }
 
+        if (rowsCurrent == rowsExpected.size())
+            throw new AssertionError("More rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
+
         Object[] rowExpected = rowsExpected.get(rowsCurrent++);
-        if (!Arrays.equals(rowActual, rowExpected)) {
+        if (!Arrays.equals(rowActual, rowExpected))
             throw new AssertionError("Row " + (rowsCurrent - 1) + " does not match expected row. Expected: " + Arrays.toString(rowExpected) + ", Actual: " + Arrays.toString(rowActual));
-        }
 
         return rowActual;
     }
@@ -47,11 +53,21 @@ public class TestOperator extends Operator.Intermediate {
     protected void closeIntermediate() {
         assertIsOpen();
         isOpen = false;
+        if (rowsCurrent < rowsExpected.size())
+            throw new AssertionError("Fewer rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
     }
 
     private void assertIsOpen() {
         if (!isOpen) {
             throw new IllegalStateException("Operator is not open. Call open() before calling next() or close().");
         }
+    }
+
+    public final List<ColumnSpec> openExhaustCloseAndGetSchema() {
+        open();
+        List<ColumnSpec> columns = schema();
+        while (next() != null) {}
+        close();
+        return columns;
     }
 }

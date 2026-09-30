@@ -34,7 +34,7 @@ public final class ProjectOperator extends Operator.Intermediate {
 
     @Override
     protected Object[] nextIntermediate() {
-        Object[] row = next();
+        Object[] row = childNext();
         if (row == null) {
             return null;
         }

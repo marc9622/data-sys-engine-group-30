@@ -1,7 +1,6 @@
 package dk.itu.datasys;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -10,9 +9,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
+import dk.itu.datasys.Spec.*;
 
 class BinderTest {
 
