@@ -23,11 +23,11 @@ class SqlParserTest {
     void parsesCreateCopyAndSelectStatements() {
         SqlParser parser = new SqlParser();
 
-        List<Statement> statements = parser.parse(
-                "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);" +
-                "COPY trips FROM 'trips.csv';" +
-                "SELECT * FROM trips;" +
-                "SELECT * FROM trips WHERE distance > 100;");
+        List<Statement> statements = parser.parse("""
+                CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
+                COPY trips FROM 'trips.csv';
+                SELECT * FROM trips;
+                SELECT * FROM trips WHERE distance > 100;""");
 
         int index = 0;
 
@@ -46,16 +46,16 @@ class SqlParserTest {
     void parsesNumbersCorrect() {
         SqlParser parser = new SqlParser();
 
-        List<Statement> statements = parser.parse(
-                "SELECT * FROM trips WHERE city = '1';" +
-                "SELECT * FROM trips WHERE city = 1;" +
-                "SELECT * FROM trips WHERE city = 1.1;" +
-                "SELECT * FROM trips WHERE distance > '100';" +
-                "SELECT * FROM trips WHERE distance > 100;" +
-                "SELECT * FROM trips WHERE distance > 100.5;" +
-                "SELECT * FROM trips WHERE price < '50';" +
-                "SELECT * FROM trips WHERE price < 50;" +
-                "SELECT * FROM trips WHERE price < 50.75;");
+        List<Statement> statements = parser.parse("""
+                SELECT * FROM trips WHERE city = '1';
+                SELECT * FROM trips WHERE city = 1;
+                SELECT * FROM trips WHERE city = 1.1;
+                SELECT * FROM trips WHERE distance > '100';
+                SELECT * FROM trips WHERE distance > 100;
+                SELECT * FROM trips WHERE distance > 100.5;
+                SELECT * FROM trips WHERE price < '50';
+                SELECT * FROM trips WHERE price < 50;
+                SELECT * FROM trips WHERE price < 50.75;""");
 
 
         int index = 0;
@@ -131,10 +131,10 @@ class SqlParserTest {
     void parsesCaseInsensitiveStatements() {
         SqlParser parser = new SqlParser();
 
-        List<Statement> statements = parser.parse(
-                "cReAtE tAbLe trips (city StRiNg, distance LoNg, price DoUbLe);" +
-                "CoPy trips FrOm 'trips.csv';" +
-                "SeLeCt * FrOm trips WhErE distance > 100;");
+        List<Statement> statements = parser.parse("""
+                cReAtE tAbLe trips (city StRiNg, distance LoNg, price DoUbLe);
+                CoPy trips FrOm 'trips.csv';
+                SeLeCt * FrOm trips WhErE distance > 100;""");
 
         int index = 0;
 
@@ -152,12 +152,12 @@ class SqlParserTest {
     void parsesCaseSensitiveIdentifiers() {
         SqlParser parser = new SqlParser();
 
-        List<Statement> statements = parser.parse(
-                "CREATE TABLE TrIpS (city STRING, Distance LONG, PRICE DOUBLE);" +
-                "COPY TrIpS FROM 'trips.csv';" +
-                "SELECT * FROM TrIpS WHERE city = 'Copenhagen';" +
-                "SELECT * FROM TrIpS WHERE Distance > 100;" +
-                "SELECT * FROM TrIpS WHERE PRICE < 50.75;");
+        List<Statement> statements = parser.parse("""
+                CREATE TABLE TrIpS (city STRING, Distance LONG, PRICE DOUBLE);
+                COPY TrIpS FROM 'trips.csv';
+                SELECT * FROM TrIpS WHERE city = 'Copenhagen';
+                SELECT * FROM TrIpS WHERE Distance > 100;
+                SELECT * FROM TrIpS WHERE PRICE < 50.75;""");
 
         int index = 0;
 
@@ -197,15 +197,15 @@ class SqlParserTest {
     void parsesStatementsWithComments() {
         SqlParser parser = new SqlParser();
 
-        List<Statement> statements = parser.parse(
-                "-- This is a comment\n" +
-                "CREATE TABLE trips (\n" +
-                "   city STRING, -- commentedColumn STRING,\n" + 
-                "   distance LONG,\n" +
-                "   price DOUBLE\n" +
-                "); -- Another comment\n" +
-                "COPY trips FROM 'trips.csv';\n" +
-                "SELECT * FROM trips WHERE distance > 100; -- Final comment\n");
+        List<Statement> statements = parser.parse("""
+                -- This is a comment
+                CREATE TABLE trips (
+                   city STRING, -- commentedColumn STRING,
+                   distance LONG,
+                   price DOUBLE
+                ); -- Another comment
+                COPY trips FROM 'trips.csv';
+                SELECT * FROM trips WHERE distance > 100; -- Final comment""");
 
         int index = 0;
 
@@ -223,9 +223,9 @@ class SqlParserTest {
     void parsesNegativeNumbers() {
         SqlParser parser = new SqlParser();
 
-        List<Statement> statements = parser.parse(
-                "SELECT * FROM trips WHERE distance < -100;" +
-                "SELECT * FROM trips WHERE distance < -100.5;");
+        List<Statement> statements = parser.parse("""
+                SELECT * FROM trips WHERE distance < -100;
+                SELECT * FROM trips WHERE distance < -100.5;""");
 
         int index = 0;
 
@@ -281,5 +281,23 @@ class SqlParserTest {
         // Double too negative
         assertThrows(SqlParseException.class, () ->
                 parser.parse("SELECT * FROM trips WHERE price > -1179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368.0;"));
+    }
+
+    @Test
+    void parsesSelectWithColumnList() {
+        SqlParser parser = new SqlParser();
+
+        List<Statement> statements = parser.parse("""
+                SELECT city, price FROM trips;
+                SELECT distance FROM trips WHERE distance > 100;""");
+
+        int index = 0;
+
+        assertEquals(new Statement.Select(List.of("city", "price"), "trips", Optional.empty()), statements.get(index++));
+        assertEquals(new Statement.Select(List.of("distance"), "trips", Optional.of(
+                        new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L)
+                        )), statements.get(index++));
+
+        assertEquals(index, statements.size());
     }
 }
