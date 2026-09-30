@@ -11,8 +11,6 @@ import java.nio.file.Path;
 import java.util.*;
 import static java.util.Objects.requireNonNull;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,12 +47,8 @@ public final class StorageEngine {
         if (Files.exists(catalogPath)) {
             try {
                 this.catalog = mapper.readValue(catalogPath.toFile(), Catalog.class);
-
-                for (TableMeta table : catalog.tables.values()) {
-                    for (PartitionMeta partition : table.partitions) {
-                        loadPartitionStats(partition, table.columns);
-                    }
-                }
+                for (TableMeta table : catalog.tables.values())
+                    normalizePartitionStats(table);
             } catch (Exception e) {
                 throw new RuntimeException("failed to read catalog", e);
             }
@@ -66,6 +60,10 @@ public final class StorageEngine {
 
     public ScanStats getLastScanStats() {
         return lastScanStats;
+    }
+
+    void setLastScanStats(ScanStats scanStats) {
+        lastScanStats = requireNonNull(scanStats, "scanStats");
     }
 
     /**
@@ -176,55 +174,10 @@ public final class StorageEngine {
         requireNonNull(comparison);
         requireNonNull(constant);
 
-        TableMeta table;
-        synchronized (catalog) {
-            table = catalog.tables.get(tableName);
-            if (table == null)
-                throw new IllegalArgumentException("unknown table: " + tableName);
-        }
-
-        int colIdx = -1;
-        for (int i = 0; i < table.columns.size(); i++) {
-            if (table.columns.get(i).name().equals(columnName)) {
-                colIdx = i;
-                break;
-            }
-        }
-        if (colIdx == -1)
-            throw new IllegalArgumentException("unknown column: " + columnName);
-
-        ColumnType colType = table.columns.get(colIdx).type();
-        // exact type match
-        if (!typeMatches(colType, constant))
-            throw new IllegalArgumentException("constant type does not match column type");
-
-        int partitionsTotal = table.partitions.size();
-        int partitionsRead = 0;
-        int partitionsPruned = 0;
-        List<Object[]> out = new ArrayList<>();
-
-        long start = System.currentTimeMillis();
-        for (PartitionMeta partition : table.partitions) {
-            Object pmin = partition.mins.get(colIdx);
-            Object pmax = partition.maxs.get(colIdx);
-
-            boolean canContain = partitionMayContain(pmin, pmax, comparison, constant, colType);
-            LOGGER.debug("table={} column={} comparison={} const={} partition={} min={} max={} decision={}", tableName, columnName, comparison, constant, partitionsRead, pmin, pmax, canContain ? "READ" : "PRUNED");
-
-            if (!canContain) {
-                partitionsPruned++;
-                continue;
-            }
-
-            readPartition(table, partition, comparison, constant, colIdx, colType, out);
-            partitionsRead++;
-        }
-
-        long dur = System.currentTimeMillis() - start;
-        lastScanStats = new ScanStats(partitionsTotal, partitionsRead, partitionsPruned);
-        LOGGER.debug("table={} column={} comparison={} const={} partitionsRead={} partitionsPruned={} rowsOut={} durationMs={}", tableName, columnName, comparison, constant, partitionsRead, partitionsPruned, out.size(), dur);
-
-        return out;
+        return new Executor(this).executeStatement(
+                new Statement.Select(
+                        tableName,
+                        Optional.of(new Statement.Select.Predicate(columnName, comparison, constant))));
     }
 
     /**
@@ -239,6 +192,20 @@ public final class StorageEngine {
             if (table == null)
                 throw new IllegalArgumentException("unknown table: " + tableName);
             return List.copyOf(table.columns);
+        }
+    }
+
+    /**
+     * Returns the table's partition metadata without reading partition data.
+     */
+    public List<PartitionMeta> partitions(String tableName) {
+        requireNonNull(tableName);
+
+        synchronized (catalog) {
+            TableMeta table = catalog.tables.get(tableName);
+            if (table == null)
+                throw new IllegalArgumentException("unknown table: " + tableName);
+            return List.copyOf(table.partitions);
         }
     }
 
@@ -260,14 +227,6 @@ public final class StorageEngine {
     }
 
     // ---------- Helpers ----------
-
-    private static boolean typeMatches(ColumnType t, Object constant) {
-        return switch (t) {
-            case STRING -> constant instanceof String;
-            case LONG -> constant instanceof Long;
-            case DOUBLE -> constant instanceof Double;
-        };
-    }
 
     static boolean partitionMayContain(Object pmin, Object pmax, Comparison cmp, Object constant, ColumnType type) {
         if (pmin == null || pmax == null)
@@ -292,15 +251,6 @@ public final class StorageEngine {
             case STRING -> ((String) a).compareTo((String) b);
             case LONG -> Long.compare(((Long) a), ((Long) b));
             case DOUBLE -> Double.compare(((Double) a), ((Double) b));
-        };
-    }
-
-    private static boolean rowMatches(Object v, Comparison cmp, Object constant, ColumnType type) {
-        int c = compareObjects(v, constant, type);
-        return switch (cmp) {
-            case EQUALS -> c == 0;
-            case LESS_THAN -> c < 0;
-            case GREATER_THAN -> c > 0;
         };
     }
 
@@ -447,43 +397,6 @@ public final class StorageEngine {
         }
     }
 
-    private void loadPartitionStats(PartitionMeta partition, List<ColumnSpec> columns) throws IOException {
-        Path partFile = dataDir.resolve(partition.fileName);
-        try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
-            int rows = in.readInt();
-            if (rows != partition.rowCount)
-                throw new IOException("partition header does not match catalog: " + partFile);
-            readPartitionStats(in, columns, partition);
-        }
-    }
-
-
-    void readPartition(TableMeta table, PartitionMeta partition, Comparison comparison, Object constant, int colIdx, ColumnType colType, List<Object[]> out) {
-        Path partFile = dataDir.resolve(partition.fileName);
-        try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
-            int rows = in.readInt();
-            int cols = table.columns.size();
-            readPartitionStats(in, table.columns, partition);
-
-            // load column-wise: for each column read all row values into an array
-            List<Object[]> colData = new ArrayList<>(cols);
-            for (int c = 0; c < cols; c++) {
-                ColumnType t = table.columns.get(c).type();
-                colData.add(readPartitionColumn(in, t, rows));
-            }
-
-            // assemble rows from column arrays and evaluate predicate
-            for (int r = 0; r < rows; r++) {
-                Object[] row = new Object[cols];
-                for (int c = 0; c < cols; c++) row[c] = colData.get(c)[r];
-                Object v = row[colIdx];
-                if (rowMatches(v, comparison, constant, colType)) out.add(row);
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("failed reading partition " + partFile, e);
-        }
-    }
-
     /**
      * Reads all rows from one partition without applying a predicate.
      * Partition selection belongs to the planner; row filtering belongs to a
@@ -541,6 +454,30 @@ public final class StorageEngine {
         }
     }
 
+    private static void normalizePartitionStats(TableMeta table) {
+        for (PartitionMeta partition : table.partitions) {
+            if (partition.mins == null || partition.maxs == null)
+                throw new IllegalArgumentException("partition statistics missing: " + partition.fileName);
+
+            for (int columnIndex = 0; columnIndex < table.columns.size(); columnIndex++) {
+                ColumnType type = table.columns.get(columnIndex).type();
+                partition.mins.set(columnIndex, normalizeStat(partition.mins.get(columnIndex), type));
+                partition.maxs.set(columnIndex, normalizeStat(partition.maxs.get(columnIndex), type));
+            }
+        }
+    }
+
+    private static Object normalizeStat(Object value, ColumnType type) {
+        if (value == null)
+            return null;
+
+        return switch (type) {
+            case STRING -> value.toString();
+            case LONG -> ((Number) value).longValue();
+            case DOUBLE -> ((Number) value).doubleValue();
+        };
+    }
+
     // ---------- Metadata Classes ----------
 
     public static final class Catalog {
@@ -576,9 +513,7 @@ public final class StorageEngine {
 
     public static final class PartitionMeta {
         public String fileName;
-        @JsonIgnore
         public List<Object> mins;
-        @JsonIgnore
         public List<Object> maxs;
         public int rowCount;
 

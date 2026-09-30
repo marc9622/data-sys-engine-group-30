@@ -1,0 +1,1 @@
+SELECT * FROM trips WHERE city = 'Odense';
