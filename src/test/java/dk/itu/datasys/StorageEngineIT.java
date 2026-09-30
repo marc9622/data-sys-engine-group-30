@@ -12,10 +12,6 @@ import dk.itu.datasys.Spec.*;
 
 class StorageEngineIT {
 
-    private static Path resource(String name) {
-        return Path.of("src/test/resources/" + name).toAbsolutePath();
-    }
-
     @Test
     void schemaPersistenceAndDuplicate(@TempDir Path tmp) {
         StorageEngine e1 = new StorageEngine(tmp);
@@ -33,7 +29,7 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("trips", cols);
-        Path csv = resource("trips.csv");
+        Path csv = Utils.resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
 
         List<Object[]> all = e.select("trips", "distance", Comparison.GREATER_THAN, -1L);
@@ -51,7 +47,7 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("trips", cols);
-        Path csv = resource("trips.csv");
+        Path csv = Utils.resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
 
         // STRING equals
@@ -72,7 +68,7 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("t", cols);
-        Path csv = resource("trips.csv");
+        Path csv = Utils.resource("trips.csv");
         e.copyFromCsvFile("t", csv.toString());
 
         List<Object[]> none = e.select("t", "distance", Comparison.GREATER_THAN, 1000L);
@@ -89,7 +85,7 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("trips", cols);
-        Path csv = resource("trips.csv");
+        Path csv = Utils.resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
 
         StorageEngine.TableMeta tm = e.catalogForTest().tables.get("trips");
@@ -116,7 +112,7 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
 
         e.createTable("trips", cols);
-        e.copyFromCsvFile("trips", resource("trips_sorted.csv").toString());
+        e.copyFromCsvFile("trips", Utils.resource("trips_sorted.csv").toString());
 
         List<Object[]> res = e.select("trips", "distance", Comparison.GREATER_THAN, 200L);
         assertEquals(2, res.size());
@@ -133,7 +129,7 @@ class StorageEngineIT {
         StorageEngine e1 = new StorageEngine(tmp);
 
         e1.createTable("trips", cols);
-        e1.copyFromCsvFile("trips", resource("trips.csv").toString());
+        e1.copyFromCsvFile("trips", Utils.resource("trips.csv").toString());
 
         StorageEngine.Catalog c1 = e1.catalogForTest();
 

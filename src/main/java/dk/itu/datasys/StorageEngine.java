@@ -457,6 +457,7 @@ public final class StorageEngine {
         }
     }
 
+
     void readPartition(TableMeta table, PartitionMeta partition, Comparison comparison, Object constant, int colIdx, ColumnType colType, List<Object[]> out) {
         Path partFile = dataDir.resolve(partition.fileName);
         try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
@@ -478,6 +479,45 @@ public final class StorageEngine {
                 Object v = row[colIdx];
                 if (rowMatches(v, comparison, constant, colType)) out.add(row);
             }
+        } catch (IOException e) {
+            throw new RuntimeException("failed reading partition " + partFile, e);
+        }
+    }
+
+    /**
+     * Reads all rows from one partition without applying a predicate.
+     * Partition selection belongs to the planner; row filtering belongs to a
+     * FilterOperator.
+     */
+    public List<Object[]> readPartitionRows(String tableName, PartitionMeta partition) {
+        requireNonNull(tableName);
+        requireNonNull(partition);
+
+        TableMeta table;
+        synchronized (catalog) {
+            table = catalog.tables.get(tableName);
+            if (table == null)
+                throw new IllegalArgumentException("unknown table: " + tableName);
+        }
+
+        Path partFile = dataDir.resolve(partition.fileName);
+        try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
+            int rows = in.readInt();
+            int cols = table.columns.size();
+            readPartitionStats(in, table.columns, partition);
+
+            List<Object[]> colData = new ArrayList<>(cols);
+            for (ColumnSpec column : table.columns)
+                colData.add(readPartitionColumn(in, column.type(), rows));
+
+            List<Object[]> result = new ArrayList<>(rows);
+            for (int r = 0; r < rows; r++) {
+                Object[] row = new Object[cols];
+                for (int c = 0; c < cols; c++)
+                    row[c] = colData.get(c)[r];
+                result.add(row);
+            }
+            return result;
         } catch (IOException e) {
             throw new RuntimeException("failed reading partition " + partFile, e);
         }

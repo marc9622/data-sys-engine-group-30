@@ -21,7 +21,7 @@ class SqlParserTest {
 
     @Test
     void parsesCreateCopyAndSelectStatements() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);" +
@@ -44,7 +44,7 @@ class SqlParserTest {
 
     @Test
     void parsesNumbersCorrect() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "SELECT * FROM trips WHERE city = '1';" +
@@ -75,7 +75,7 @@ class SqlParserTest {
 
     @Test
     void throwsSqlParseExceptionWithLineAndColumn() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         // Missing right-paren
         SqlParseException ex = assertThrows(SqlParseException.class, () ->
@@ -129,7 +129,7 @@ class SqlParserTest {
 
     @Test
     void parsesCaseInsensitiveStatements() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "cReAtE tAbLe trips (city StRiNg, distance LoNg, price DoUbLe);" +
@@ -150,7 +150,7 @@ class SqlParserTest {
 
     @Test
     void parsesCaseSensitiveIdentifiers() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "CREATE TABLE TrIpS (city STRING, Distance LONG, PRICE DOUBLE);" +
@@ -195,7 +195,7 @@ class SqlParserTest {
 
     @Test
     void parsesStatementsWithComments() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "-- This is a comment\n" +
@@ -221,7 +221,7 @@ class SqlParserTest {
 
     @Test
     void parsesNegativeNumbers() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse(
                 "SELECT * FROM trips WHERE distance < -100;" +
@@ -237,7 +237,7 @@ class SqlParserTest {
 
     @Test
     void parsesNumberLimits() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         Statement s0 = parser.parse("SELECT * FROM trips WHERE distance < 9223372036854775807;").getFirst();
         Statement s1 = parser.parse("SELECT * FROM trips WHERE price < 179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368.0;").getFirst();
@@ -264,7 +264,7 @@ class SqlParserTest {
 
     @Test
     void throwsSqlParseExceptionOnUnrepresentableNumbers() {
-        SqlParserFacade parser = new SqlParserFacade();
+        SqlParser parser = new SqlParser();
 
         // Integer too positive
         assertThrows(SqlParseException.class, () ->
