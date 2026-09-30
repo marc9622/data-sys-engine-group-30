@@ -32,7 +32,7 @@ public final class Engine {
         }
 
         Executor executor = new Executor(new StorageEngine(Path.of("data")));
-        for (List<Object[]> statementRows : executor.execute(sql)) {
+        for (List<Object[]> statementRows : executor.executeScript(sql)) {
             for (Object[] row : statementRows)
                 System.out.println(csvRow(row));
         }

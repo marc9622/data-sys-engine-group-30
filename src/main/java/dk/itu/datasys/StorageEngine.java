@@ -174,7 +174,7 @@ public final class StorageEngine {
         requireNonNull(comparison);
         requireNonNull(constant);
 
-        return new Executor(this).execute(
+        return new Executor(this).executeStatement(
                 new Statement.Select(
                         tableName,
                         Optional.of(new Statement.Select.Predicate(columnName, comparison, constant))));
