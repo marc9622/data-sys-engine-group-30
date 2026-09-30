@@ -576,9 +576,7 @@ public final class StorageEngine {
 
     public static final class PartitionMeta {
         public String fileName;
-        @JsonIgnore
         public List<Object> mins;
-        @JsonIgnore
         public List<Object> maxs;
         public int rowCount;
 

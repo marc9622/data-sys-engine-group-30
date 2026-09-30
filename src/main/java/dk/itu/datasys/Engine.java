@@ -1,29 +1,26 @@
 package dk.itu.datasys;
 
+import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
 
 public final class Engine {
     public static void main(String[] args) {
-        SqlPrinter printer = new SqlPrinter();
+    System.setProperty("maxRowsPerPartition", "2");
 
-        List<Statement> statements = List.of(
-                new Statement.CreateTable("trips", List.of(
-                        new ColumnSpec("city", ColumnType.STRING),
-                        new ColumnSpec("distance", ColumnType.LONG),
-                        new ColumnSpec("price", ColumnType.DOUBLE))),
-                new Statement.Copy("trips", "trips.csv"),
-                new Statement.Select("trips",
-                        Optional.of(new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L))),
-                new Statement.Select("trips", Optional.empty())
-        );
+    Path dataDir = Path.of("data");
+    StorageEngine storage = new StorageEngine(dataDir);
+    List<ColumnSpec> columns = List.of(
+        new ColumnSpec("city", ColumnType.STRING),
+        new ColumnSpec("distance", ColumnType.LONG),
+        new ColumnSpec("price", ColumnType.DOUBLE));
 
-        for (Statement statement : statements) {
-            System.out.println(printer.print(statement));
-        }
+    storage.createTable("trips", columns);
+    storage.copyFromCsvFile("trips", "src/test/resources/trips.csv");
+
+    System.out.println("Generated catalog: " + dataDir.resolve("catalog.json"));
+    System.out.println("Generated partition files in: " + dataDir);
     }
 }
