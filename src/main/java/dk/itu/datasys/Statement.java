@@ -11,7 +11,10 @@ public sealed interface Statement permits CreateTable, Copy, Select {
 
     public static record Copy(String tableName, String csvFilePath) implements Statement { }
 
-    public static record Select(String tableName, Optional<Predicate> where) implements Statement {
+    public static record Select(List<String> columns, String tableName, Optional<Predicate> where) implements Statement {
+        public Select(String tableName, Optional<Predicate> where) {
+            this(List.of(), tableName, where);
+        }
 
         public static record Predicate(String columnName, Comparison comparison, Object constant) {
             public boolean matches(Object value, ColumnType type) {

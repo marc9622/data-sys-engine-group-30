@@ -23,7 +23,8 @@ class SqlPrinterTest {
         Statement selectWithWhere = new Statement.Select("trips",
                 Optional.of(new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L)));
 
-        Statement selectWithoutWhere = new Statement.Select("trips", Optional.empty());
+        Statement selectWithoutWhere = new Statement.Select(List.of("city", "price"), "trips",
+                Optional.empty());
 
         SqlPrinter printer = new SqlPrinter();
 
@@ -33,7 +34,7 @@ class SqlPrinterTest {
                 printer.print(copy));
         assertEquals("SELECT * FROM trips WHERE distance > 100;",
                 printer.print(selectWithWhere));
-        assertEquals("SELECT * FROM trips;",
+        assertEquals("SELECT city, price FROM trips;",
                 printer.print(selectWithoutWhere));
     }
 
@@ -50,7 +51,7 @@ class SqlPrinterTest {
                 new Statement.Copy("trips", "trips.csv"),
                 new Statement.Select("trips",
                         Optional.of(new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L))),
-                new Statement.Select("trips", Optional.empty()));
+                new Statement.Select(List.of("city", "price"), "trips", Optional.empty()));
 
         for (Statement statement : statements) {
             assertEquals(statement, parser.parse(printer.print(statement)).getFirst());

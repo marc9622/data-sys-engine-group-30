@@ -61,11 +61,26 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
     // Builds a SELECT node with an optional WHERE predicate.
     @Override
     public Object visitSelect(SqlParser.SelectContext context) {
+        @SuppressWarnings("unchecked") 
+        List<String> columnList = context.columnList() == null
+                ? List.of()
+                : (List<String>) visit(context.columnList());
+
         Optional<Statement.Select.Predicate> predicate = context.predicate() == null
                 ? Optional.empty()
                 : Optional.of((Statement.Select.Predicate) visit(context.predicate()));
 
-        return new Statement.Select(context.IDENTIFIER().getText(), predicate);
+        return new Statement.Select(columnList, context.IDENTIFIER().getText(), predicate);
+    }
+
+    // Builds the projection column list.
+    @Override
+    public Object visitColumnList(SqlParser.ColumnListContext context) {
+        System.out.println(context.IDENTIFIER().toString());
+
+        return context.IDENTIFIER().stream()
+            .<String>map(column -> column.getText())
+            .toList();
     }
 
     // Builds a predicate from its column, operator, and literal.

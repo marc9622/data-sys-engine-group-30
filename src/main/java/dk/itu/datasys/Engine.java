@@ -3,9 +3,7 @@ package dk.itu.datasys;
 import java.util.List;
 import java.util.Optional;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
+import dk.itu.datasys.Spec.*;
 
 public final class Engine {
     public static void main(String[] args) {

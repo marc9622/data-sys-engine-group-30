@@ -41,7 +41,19 @@ public final class SqlPrinter {
 
     private static String printSelect(Statement.Select select) {
         StringBuilder sb = new StringBuilder();
-        sb.append("SELECT * FROM ").append(select.tableName());
+        sb.append("SELECT ");
+
+        if (select.columns().isEmpty())
+            sb.append("*");
+        else for (int i = 0; i < select.columns().size(); i++) {
+            String col = select.columns().get(i);
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(col);
+        }
+
+        sb.append(" FROM ").append(select.tableName());
 
         if (select.where().isPresent()) {
             Statement.Select.Predicate predicate = select.where().get();
