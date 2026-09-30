@@ -2,6 +2,7 @@
 # Project
 target/
 logs/
+data/
 .classpath
 .factorypath
 .project
