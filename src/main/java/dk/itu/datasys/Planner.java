@@ -62,7 +62,7 @@ public final class Planner {
             Select.Predicate predicate = select.where().get();
             List<ColumnSpec> schema = engine.schema(tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
-            root = new FilterOperator(root, predicate, columnIndex, schema.get(columnIndex).type());
+            root = new FilterOperator(root, predicate, columnIndex);
         }
 
         int total = allPartitions.size();
