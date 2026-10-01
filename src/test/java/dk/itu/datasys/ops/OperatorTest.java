@@ -2,11 +2,14 @@ package dk.itu.datasys.ops;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
+import dk.itu.datasys.StorageEngine;
 import dk.itu.datasys.Statement.Select.Predicate;
 import dk.itu.datasys.Utils;
 
@@ -23,8 +26,55 @@ class OperatorTest {
     }
 
     @Test
-    void scanOperator() {
-        // TODO: Requires refactor of ScanOperator and StorageEngine
+    void scanOperatorReturnsRowsFromSelectedPartitions(@TempDir Path tempDir) {
+        StorageEngine engine = createPartitionedEngine(tempDir);
+        List<StorageEngine.PartitionMeta> partitions = engine.partitions(Utils.tripsName);
+        //Choose partitions 1 and 2 for scan 
+        List<StorageEngine.PartitionMeta> selectedPartitions =
+        partitions.subList(1, 3);
+        // Choose rows 2,3,4,5 for assertion(rows in partiotion 1 and 2) 
+         List<Object[]> selectedRows = Utils.tripsRows.subList(2, 6);
+
+        ScanOperator scanOp = new ScanOperator(engine, Utils.tripsName, selectedPartitions);
+        AssertOperator assertOp = new AssertOperator(scanOp, selectedRows);
+
+        assertOp.openExhaustCloseAndGetSchema();
+    }
+
+    @Test
+    void scanOperatorReturnsNoRowsForEmptyPartitionList(@TempDir Path tempDir) {
+        StorageEngine engine = createPartitionedEngine(tempDir);
+
+        ScanOperator scanOp = new ScanOperator(engine, Utils.tripsName, List.of());
+        AssertOperator assertOp = new AssertOperator(scanOp, List.of());
+
+        assertOp.openExhaustCloseAndGetSchema();
+    }
+
+    @Test
+    void scanOperatorReturnsTableSchema(@TempDir Path tempDir) {
+        StorageEngine engine = createPartitionedEngine(tempDir);
+        ScanOperator scanOp = new ScanOperator(engine, Utils.tripsName, List.of());
+
+        assertEquals(Utils.tripsColumns, scanOp.schema());
+    }
+
+    private StorageEngine createPartitionedEngine(Path tempDir) {
+        //four partitions with two rows per partition
+        String previousMaxRowsPerPartition = System.getProperty("maxRowsPerPartition");
+        System.setProperty("maxRowsPerPartition", "2");
+
+        try {
+            StorageEngine engine = new StorageEngine(tempDir);
+            engine.createTable(Utils.tripsName, Utils.tripsColumns);
+            engine.copyFromCsvFile(Utils.tripsName, Utils.resource("trips.csv").toString());
+            return engine;
+        } finally {
+            if (previousMaxRowsPerPartition == null)
+                System.clearProperty("maxRowsPerPartition");
+            else
+                System.setProperty("maxRowsPerPartition", previousMaxRowsPerPartition);
+        }
     }
 
     @Test
@@ -81,4 +131,3 @@ class OperatorTest {
         }
     }
 }
-

@@ -33,7 +33,7 @@ class FrontDoorIT {
         String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertEquals(0, exitCode);
-        assertEquals("Odense,95,120.75\n", stdout);
+        assertEquals("Odense,95,120.75" + System.lineSeparator(), stdout);
     }
 
     @Test
