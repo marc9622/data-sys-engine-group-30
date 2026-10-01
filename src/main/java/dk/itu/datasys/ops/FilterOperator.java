@@ -10,7 +10,7 @@ import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Statement.Select.Predicate;
 
-public final class FilterOperator extends Operator.Intermediate {
+public final class FilterOperator extends Operator.RowWiseIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
 
     private final Predicate predicate;
@@ -29,29 +29,21 @@ public final class FilterOperator extends Operator.Intermediate {
     }
 
     @Override
-    protected void openIntermediate() {
+    protected void openIntermediate(List<ColumnSpec> schema) {
         rowsIn = 0;
         rowsOut = 0;
-        columnType = childSchema().get(columnIndex).type();
+        columnType = schema.get(columnIndex).type();
     }
 
     @Override
-    public List<ColumnSpec> schema() {
-        return childSchema();
-    }
-
-    @Override
-    protected Object[] nextIntermediate() {
-        Object[] row = childNext(); 
-        while (row!= null) {
-            rowsIn++;
-            if (predicate.matches(row[columnIndex], columnType)) {
-                rowsOut++;
-                return row;
-            }
-            row = childNext();
+    protected NextResult nextIntermediate(Object[] row) {
+        rowsIn++;
+        if (predicate.matches(row[columnIndex], columnType)) {
+            rowsOut++;
+            return NextResult.of(row);
         }
-        return null;
+
+        return NextResult.retry;
     }
 
     @Override
