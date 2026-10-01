@@ -3,7 +3,11 @@ package dk.itu.datasys.ops;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -28,12 +32,12 @@ class OperatorTest {
     @Test
     void scanOperatorReturnsRowsFromSelectedPartitions(@TempDir Path tempDir) {
         StorageEngine engine = createPartitionedEngine(tempDir);
+
         List<StorageEngine.PartitionMeta> partitions = engine.partitions(Utils.tripsName);
-        //Choose partitions 1 and 2 for scan 
-        List<StorageEngine.PartitionMeta> selectedPartitions =
-        partitions.subList(1, 3);
+        List<StorageEngine.PartitionMeta> selectedPartitions = partitions.subList(1, 3);
+
         // Choose rows 2,3,4,5 for assertion(rows in partiotion 1 and 2) 
-         List<Object[]> selectedRows = Utils.tripsRows.subList(2, 6);
+        List<Object[]> selectedRows = Utils.tripsRows.subList(2, 6);
 
         ScanOperator scanOp = new ScanOperator(engine, Utils.tripsName, selectedPartitions);
         AssertOperator assertOp = new AssertOperator(scanOp, selectedRows);
@@ -128,6 +132,97 @@ class OperatorTest {
 
             List<ColumnSpec> columns = assertOp.openExhaustCloseAndGetSchema();
             assertEquals(projection, columns);
+        }
+    }
+
+    @Test
+    void distinctOperator() {
+        List<Object[]> duplicatedRows = new ArrayList<>(Utils.tripsRows.size() * 2);
+        duplicatedRows.addAll(Utils.tripsRows);
+        duplicatedRows.addAll(Utils.tripsRows);
+
+        MockOperator mockOp = new MockOperator(Utils.tripsColumns, duplicatedRows);
+
+        for (List<Integer> columns : List.of(List.of(0), List.of(1), List.of(2), List.of(0, 2), List.of(0, 1, 2))) {
+            DistinctOperator distinctOp = new DistinctOperator(mockOp, new HashSet<>(columns));
+
+            class Wrapper {
+                final Object[] row;
+
+                Wrapper(Object[] row) {
+                    this.row = row;
+                }
+
+                @Override
+                public boolean equals(Object obj) {
+                    if (this == obj) return true;
+                    if (obj == null || getClass() != obj.getClass()) return false;
+
+                    Wrapper other = (Wrapper) obj;
+                    for (int columnIndex : columns) {
+                        if (!Objects.equals(this.row[columnIndex], other.row[columnIndex]))
+                            return false;
+                    }
+                    return true;
+                }
+
+                @Override
+                public int hashCode() {
+                    return Arrays.hashCode(columns.stream().map(i -> row[i]).toArray());
+                }
+            }
+
+            List<Object[]> distinctedRows = Utils.tripsRows.stream()
+                .map(Wrapper::new)
+                .distinct()
+                .map(w -> w.row)
+                .toList();
+
+            AssertOperator assertOp = new AssertOperator(distinctOp, distinctedRows);
+
+            List<ColumnSpec> columnsSchema = assertOp.openExhaustCloseAndGetSchema();
+            assertEquals(Utils.tripsColumns, columnsSchema);
+        }
+    }
+
+    @Test
+    void sortOperator() {
+        MockOperator mockOp = new MockOperator(Utils.tripsColumns, Utils.tripsRows);
+
+        for (int columnIndex = 0; columnIndex < Utils.tripsColumns.size(); columnIndex++) {
+            for (SortOperator.Ordering ordering : SortOperator.Ordering.values()) {
+                SortOperator sortOp = new SortOperator(mockOp, columnIndex, ordering);
+
+                int i = columnIndex;
+                List<Object[]> sortedRows = Utils.tripsRows.stream()
+                    .sorted((left, right) ->
+                        ordering.compareNonNull(left[i], right[i], Utils.tripsColumns.get(i).type())
+                    )
+                    .toList();
+
+                AssertOperator assertOp = new AssertOperator(sortOp, sortedRows);
+
+                List<ColumnSpec> columnsSchema = assertOp.openExhaustCloseAndGetSchema();
+                assertEquals(Utils.tripsColumns, columnsSchema);
+            }
+        }
+    }
+
+    @Test
+    void countOperator() {
+        MockOperator mockOp = new MockOperator(Utils.tripsColumns, Utils.tripsRows);
+
+        for (int count : List.of(0, 5, Utils.tripsRows.size())) {
+            LimitOperator limitOp = new LimitOperator(mockOp, count);
+
+            CountOperator countOp = new CountOperator(limitOp);
+
+            List<Object[]> countRows = List.<Object[]>of(new Object[] {(long) count});
+            AssertOperator assertOp = new AssertOperator(countOp, countRows);
+
+            List<ColumnSpec> countSchema = List.of(new ColumnSpec(CountOperator.COLUMN_NAME, ColumnType.LONG));
+            List<ColumnSpec> columnsSchema = assertOp.openExhaustCloseAndGetSchema();
+            assertEquals(countSchema, columnsSchema);
         }
     }
 }

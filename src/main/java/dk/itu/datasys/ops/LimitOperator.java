@@ -7,7 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 
-public final class LimitOperator extends Operator.Intermediate {
+public final class LimitOperator extends Operator.RowWiseIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
 
     private final int rowsMax;
@@ -21,22 +21,17 @@ public final class LimitOperator extends Operator.Intermediate {
     }
 
     @Override
-    protected void openIntermediate() {
+    protected void openIntermediate(List<ColumnSpec> schema) {
         rowsCurrent = 0;
     }
 
     @Override
-    public List<ColumnSpec> schema() {
-        return childSchema();
-    }
+    protected NextResult nextIntermediate(Object[] row) {
+        if (rowsCurrent >= rowsMax)
+            return NextResult.exhausted;
 
-    @Override
-    protected Object[] nextIntermediate() {
-        if (rowsCurrent >= rowsMax) {
-            return null;
-        }
         rowsCurrent++;
-        return childNext();
+        return NextResult.of(row);
     }
 
     @Override
