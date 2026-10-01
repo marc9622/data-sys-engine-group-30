@@ -76,8 +76,6 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
     // Builds the projection column list.
     @Override
     public Object visitColumnList(SqlParser.ColumnListContext context) {
-        System.out.println(context.IDENTIFIER().toString());
-
         return context.IDENTIFIER().stream()
             .<String>map(column -> column.getText())
             .toList();
