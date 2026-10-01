@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+engine=$(dirname "$0")/target/engine.jar
+
+# Runs the packaged engine: ./engine -c "SELECT ..." or ./engine -f script.sql
+exec java $ENGINE_JAVA_OPTS -jar $engine "$@"
