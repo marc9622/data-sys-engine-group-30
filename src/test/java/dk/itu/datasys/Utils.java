@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import dk.itu.datasys.Spec.*;
-import dk.itu.datasys.StorageEngine.MalformedCsvException;
+import dk.itu.datasys.StorageEngine.ParseCsvLineResult;
 
 public final class Utils {
     private Utils() {}
@@ -33,11 +33,13 @@ public final class Utils {
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.US_ASCII)) {
             String line;
             while ((line = reader.readLine()) != null) {
-                try {
-                    rows.add(StorageEngine.parseCsvLine(line, tripsColumns));
-                } catch (MalformedCsvException e) {
-                    throw e.toRuntimeException(path.toString(), rows.size());
-                }
+                Object[] parsed = switch (StorageEngine.parseCsvLine(line, tripsColumns)) {
+                    case ParseCsvLineResult.Success(Object[] row) -> row;
+                    case ParseCsvLineResult.Malformed m ->
+                        throw m.toRuntimeException(path.toString(), rows.size());
+                };
+
+                rows.add(parsed);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);

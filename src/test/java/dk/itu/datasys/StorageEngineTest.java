@@ -68,14 +68,15 @@ class StorageEngineUnitTest {
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG));
 
         // valid csv
-        Object[] parsed = StorageEngine.parseCsvLine("Copenhagen,12", cols);
+        ParseCsvLineResult result = StorageEngine.parseCsvLine("Copenhagen,12", cols);
+        Object[] parsed = assertInstanceOf(ParseCsvLineResult.Success.class, result).row();
         assertEquals("Copenhagen", parsed[0]);
         assertEquals(12L, parsed[1]);
 
         // malformed csv
-        assertThrows(MalformedCsvException.class, () -> StorageEngine.parseCsvLine("too,many,fields", cols));
-        assertThrows(MalformedCsvException.class, () -> StorageEngine.parseCsvLine("tooFewFields", cols));
-        assertThrows(MalformedCsvException.class, () -> StorageEngine.parseCsvLine("Copenhagen,not a number", cols));
+        assertInstanceOf(ParseCsvLineResult.Malformed.class, StorageEngine.parseCsvLine("too,many,fields", cols));
+        assertInstanceOf(ParseCsvLineResult.Malformed.class, StorageEngine.parseCsvLine("tooFewFields", cols));
+        assertInstanceOf(ParseCsvLineResult.Malformed.class, StorageEngine.parseCsvLine("Copenhagen,not a number", cols));
     }
 
     @Test
