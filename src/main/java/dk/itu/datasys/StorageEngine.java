@@ -130,12 +130,11 @@ public final class StorageEngine {
             while ((line = r.readLine()) != null) {
                 totalRows++;
 
-                Object[] parsed;
-                try {
-                    parsed = parseCsvLine(line, table.columns);
-                } catch (MalformedCsvException e) {
-                    throw e.toRuntimeException(csvFilePath, totalRows);
-                }
+                Object[] parsed = switch (parseCsvLine(line, table.columns)) {
+                    case ParseCsvLineResult.Success(Object[] row) -> row;
+                    case ParseCsvLineResult.Malformed m ->
+                        throw m.toRuntimeException(csvFilePath, totalRows);
+                };
 
                 buffer.add(parsed);
                 if (buffer.size() >= maxRowsPerPartition) {
@@ -254,41 +253,55 @@ public final class StorageEngine {
         };
     }
 
-    public static final class MalformedCsvException extends Exception {
-        public MalformedCsvException(String message) {
-            super(message);
+    public static sealed interface ParseCsvLineResult permits ParseCsvLineResult.Success, ParseCsvLineResult.Malformed {
+        public static record Success(Object[] row) implements ParseCsvLineResult {}
+        public static record Malformed(int charNumber, String description, Throwable cause) implements ParseCsvLineResult {
+            public RuntimeException toRuntimeException(String fileName, int lineNumber) {
+                String message = "Malformed CSV in `" + fileName + "` at line " + lineNumber;
+                if (charNumber >= 0)
+                    message += ":" + charNumber;
+                message += ": " + description;
+
+                if (cause != null)
+                    return new RuntimeException(message, cause);
+                else
+                    return new RuntimeException(message);
+            }
         }
 
-        public MalformedCsvException(Throwable cause) {
-            super(cause);
-        }
-
-        public RuntimeException toRuntimeException(String fileName, int lineNumber) {
-            return new RuntimeException("Malformed CSV " + fileName + " at line " + lineNumber + ": " + getMessage(), this);
-        }
+        public static ParseCsvLineResult success(Object[] row) { return new Success(row); }
+        public static ParseCsvLineResult malformed(int charNumber, String description) { return new Malformed(charNumber, description, null); }
+        public static ParseCsvLineResult malformed(int charNumber, String description, Throwable cause) { return new Malformed(charNumber, description, cause); }
     }
 
-    static Object[] parseCsvLine(String line, List<ColumnSpec> cols) throws MalformedCsvException {
+    static ParseCsvLineResult parseCsvLine(String line, List<ColumnSpec> cols) {
         String[] fields = line.split(",", -1);
-        if (fields.length != cols.size())
-            throw new MalformedCsvException("field count");
+
+        int charNumber = 0;
+        if (fields.length != cols.size()) {
+            for (int i = 0; i < Math.min(fields.length, cols.size()); i++)
+                charNumber += fields[i].length() + 1; // +1 for the comma
+            if (fields.length < cols.size())
+                charNumber -= 1;
+            return ParseCsvLineResult.malformed(charNumber, "Line has " + fields.length + " field(s) but expected " + cols.size());
+        }
 
         Object[] parsed = new Object[fields.length];
         for (int i = 0; i < fields.length; i++) {
-            String s = fields[i];
-            ColumnType t = cols.get(i).type();
+            String field = fields[i];
+            ColumnType type = cols.get(i).type();
             try {
-                switch (t) {
-                    case STRING -> parsed[i] = s;
-                    case LONG -> parsed[i] = Long.valueOf(s);
-                    case DOUBLE -> parsed[i] = Double.valueOf(s);
-                    default -> throw new MalformedCsvException("unknown type");
+                switch (type) {
+                    case STRING -> parsed[i] = field;
+                    case LONG -> parsed[i] = Long.valueOf(field);
+                    case DOUBLE -> parsed[i] = Double.valueOf(field);
                 }
-            } catch (Exception ex) {
-                throw new MalformedCsvException(ex);
+            } catch (NumberFormatException e) {
+                return ParseCsvLineResult.malformed(charNumber, "Field `" + field + "` cannot be parsed as " + type, e);
             }
+            charNumber += field.length() + 1; // +1 for the comma
         }
-        return parsed;
+        return ParseCsvLineResult.success(parsed);
     }
 
     static void encodeValue(DataOutputStream out, ColumnType t, Object v) throws IOException {
