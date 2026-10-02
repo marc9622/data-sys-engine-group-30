@@ -19,7 +19,7 @@ public final class Engine {
                 default -> run(Arrays.asList(args).iterator());
             }
         } catch (RuntimeException | IOException e) {
-            System.out.println("Error: " + e.getMessage());
+            System.err.println("Error: " + e.getMessage());
             System.exit(1);
         }
     }
