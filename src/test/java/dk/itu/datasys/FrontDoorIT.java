@@ -56,6 +56,6 @@ class FrontDoorIT {
 
         assertNotEquals(0, exitCode);
         assertEquals("", stdout);
-        assertTrue(stderr.contains("error:"));
+        assertTrue(stderr.contains("Error:"));
     }
 }

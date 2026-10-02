@@ -7,7 +7,12 @@ public final class Spec {
         DOUBLE;
     }
 
-    public record ColumnSpec(String name, ColumnType type) { }
+    public record ColumnSpec(String name, ColumnType type) {
+        @Override
+        public String toString() {
+            return "ColumnSpec[name=" + name + " type=" + type + "]";
+        }
+    }
 
     public enum Comparison {
         EQUALS,
