@@ -63,20 +63,37 @@ class StorageEngineUnitTest {
         assertFalse(StorageEngine.partitionMayContain(pmin, pmax, Comparison.EQUALS, 4L, ColumnType.LONG));
     }
 
+    private static Object[] parseCsvLineAssertSuccess(String line, List<ColumnSpec> columns) {
+        ParseCsvLineResult result = StorageEngine.parseCsvLine(line, columns);
+        return assertInstanceOf(ParseCsvLineResult.Success.class, result).row();
+    }
+
+    private static ParseCsvLineResult.Malformed parseCsvLineAssertMalformed(String line, List<ColumnSpec> columns) {
+        ParseCsvLineResult result = StorageEngine.parseCsvLine(line, columns);
+        return assertInstanceOf(ParseCsvLineResult.Malformed.class, result);
+    }
+
     @Test
     void csvParsingGoodAndBad() throws Exception {
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG));
 
         // valid csv
-        ParseCsvLineResult result = StorageEngine.parseCsvLine("Copenhagen,12", cols);
-        Object[] parsed = assertInstanceOf(ParseCsvLineResult.Success.class, result).row();
+        Object[] parsed = parseCsvLineAssertSuccess("Copenhagen,12", cols);
         assertEquals("Copenhagen", parsed[0]);
         assertEquals(12L, parsed[1]);
 
         // malformed csv
-        assertInstanceOf(ParseCsvLineResult.Malformed.class, StorageEngine.parseCsvLine("too,many,fields", cols));
-        assertInstanceOf(ParseCsvLineResult.Malformed.class, StorageEngine.parseCsvLine("tooFewFields", cols));
-        assertInstanceOf(ParseCsvLineResult.Malformed.class, StorageEngine.parseCsvLine("Copenhagen,not a number", cols));
+        ParseCsvLineResult.Malformed m1 = parseCsvLineAssertMalformed("too,many,fields", cols);
+        assertEquals(9, m1.charNumber());
+        assertEquals("Line has 3 field(s) but expected 2", m1.description());
+        
+        ParseCsvLineResult.Malformed m2 = parseCsvLineAssertMalformed("tooFewFields", cols);
+        assertEquals(12, m2.charNumber());
+        assertEquals("Line has 1 field(s) but expected 2", m2.description());
+
+        ParseCsvLineResult.Malformed m3 = parseCsvLineAssertMalformed("Copenhagen,not a number", cols);
+        assertEquals(11, m3.charNumber());
+        assertEquals("Field `not a number` cannot be parsed as LONG", m3.description());
     }
 
     @Test

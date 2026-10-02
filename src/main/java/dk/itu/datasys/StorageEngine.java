@@ -281,7 +281,9 @@ public final class StorageEngine {
         if (fields.length != cols.size()) {
             for (int i = 0; i < Math.min(fields.length, cols.size()); i++)
                 charNumber += fields[i].length() + 1; // +1 for the comma
-            return ParseCsvLineResult.malformed(charNumber, "Line has " + fields.length + " fields but expected " + cols.size());
+            if (fields.length < cols.size())
+                charNumber -= 1;
+            return ParseCsvLineResult.malformed(charNumber, "Line has " + fields.length + " field(s) but expected " + cols.size());
         }
 
         Object[] parsed = new Object[fields.length];
@@ -297,7 +299,7 @@ public final class StorageEngine {
             } catch (NumberFormatException e) {
                 return ParseCsvLineResult.malformed(charNumber, "Field `" + field + "` cannot be parsed as " + type, e);
             }
-            charNumber += field.length();
+            charNumber += field.length() + 1; // +1 for the comma
         }
         return ParseCsvLineResult.success(parsed);
     }
