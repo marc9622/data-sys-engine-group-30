@@ -12,6 +12,7 @@ dependency-reduced-pom.xml
 
 # Editor
 .vscode/
+.metals/
 
 # Apple
 .DS_Store

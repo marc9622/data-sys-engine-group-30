@@ -32,7 +32,7 @@ class StorageEngineIT {
         Path csv = Utils.resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
 
-        List<Object[]> all = e.select("trips", "distance", Comparison.GREATER_THAN, -1L);
+        List<Object[]> all = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
         assertEquals(8, all.size());
         for (Object[] r : all) {
             assertTrue(r[0] instanceof String);
@@ -51,15 +51,15 @@ class StorageEngineIT {
         e.copyFromCsvFile("trips", csv.toString());
 
         // STRING equals
-        List<Object[]> s = e.select("trips", "city", Comparison.EQUALS, "Copenhagen");
+        List<Object[]> s = new Executor(e).executeScript("SELECT * FROM trips WHERE city = 'Copenhagen';").get(0);
         assertEquals(3, s.size());
 
         // LONG greater
-        List<Object[]> l = e.select("trips", "distance", Comparison.GREATER_THAN, 100L);
+        List<Object[]> l = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > 100;").get(0);
         assertEquals(4, l.size());
 
         // DOUBLE less
-        List<Object[]> d = e.select("trips", "price", Comparison.LESS_THAN, 50.0);
+        List<Object[]> d = new Executor(e).executeScript("SELECT * FROM trips WHERE price < 50.0;").get(0);
         assertEquals(2, d.size());
     }
 
@@ -71,12 +71,15 @@ class StorageEngineIT {
         Path csv = Utils.resource("trips.csv");
         e.copyFromCsvFile("t", csv.toString());
 
-        List<Object[]> none = e.select("t", "distance", Comparison.GREATER_THAN, 1000L);
+        List<Object[]> none = new Executor(e).executeScript("SELECT * FROM t WHERE distance > 1000;").get(0);
         assertEquals(0, none.size());
 
-        assertThrows(IllegalArgumentException.class, () -> e.select("nope", "distance", Comparison.EQUALS, 1L));
-        assertThrows(IllegalArgumentException.class, () -> e.select("t", "nope", Comparison.EQUALS, 1L));
-        assertThrows(IllegalArgumentException.class, () -> e.select("t", "distance", Comparison.EQUALS, 1)); // Integer vs LONG
+        assertThrows(IllegalArgumentException.class, () ->
+                new Executor(e).executeScript("SELECT * FROM nope WHERE distance = 1;"));
+        assertThrows(IllegalArgumentException.class, () ->
+                new Executor(e).executeScript("SELECT * FROM t WHERE nope = 1;"));
+        assertThrows(IllegalArgumentException.class, () ->
+                new Executor(e).executeScript("SELECT * FROM t WHERE distance = '1';"));
     }
 
     @Test
@@ -114,7 +117,7 @@ class StorageEngineIT {
         e.createTable("trips", cols);
         e.copyFromCsvFile("trips", Utils.resource("trips_sorted.csv").toString());
 
-        List<Object[]> res = e.select("trips", "distance", Comparison.GREATER_THAN, 200L);
+        List<Object[]> res = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > 200;").get(0);
         assertEquals(2, res.size());
         StorageEngine.ScanStats stats = e.getLastScanStats();
         assertTrue(stats.partitionsPruned() >= 2);
@@ -142,8 +145,8 @@ class StorageEngineIT {
         assertEquals(c1.tables, c2.tables);
 
         // assert that both engines return same results for a query
-        List<Object[]> out1 = e1.select("trips", "distance", Comparison.GREATER_THAN, -1L);
-        List<Object[]> out2 = e2.select("trips", "distance", Comparison.GREATER_THAN, -1L);
+        List<Object[]> out1 = new Executor(e1).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
+        List<Object[]> out2 = new Executor(e2).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
         assertEquals(out1.size(), out2.size());
 
         for (int i = 0; i < out1.size(); i++) {
@@ -152,4 +155,5 @@ class StorageEngineIT {
             assertArrayEquals(a, b);
         }
     }
+
 }
