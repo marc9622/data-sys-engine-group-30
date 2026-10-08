@@ -43,8 +43,9 @@ public final class SqlPrinter {
         StringBuilder sb = new StringBuilder();
         sb.append("SELECT ");
 
-        if (select.columns().isEmpty())
+        if (select.columns().isEmpty()) {
             sb.append("*");
+        }
         else for (int i = 0; i < select.columns().size(); i++) {
             String col = select.columns().get(i);
             if (i > 0) {
@@ -63,6 +64,11 @@ public final class SqlPrinter {
               .append(comparisonSql(predicate.comparison()))
               .append(" ")
               .append(literalSql(predicate.constant()));
+        }
+
+        if (select.limit().isPresent()) {
+            sb.append(" LIMIT ")
+              .append(select.limit().get());
         }
 
         sb.append(";");

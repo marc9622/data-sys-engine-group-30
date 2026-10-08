@@ -3,21 +3,12 @@ package dk.itu.datasys;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
 import dk.itu.datasys.Spec.*;
 
 class SqlParserTest {
-
-    private static void assertEqualsSelectWhere(String table, String column, Comparison comparison, Object value, Statement actual) {
-        assertEquals(new Statement.Select(table,
-                Optional.of(
-                    new Statement.Select.Predicate(column, comparison, value)
-                )),
-                actual);
-    }
 
     @Test
     void parsesCreateCopyAndSelectStatements() {
@@ -31,13 +22,10 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEquals(new Statement.CreateTable("trips", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("distance", ColumnType.LONG),
-                new ColumnSpec("price", ColumnType.DOUBLE))), statements.get(index++));
-        assertEquals(new Statement.Copy("trips", "trips.csv"), statements.get(index++));
-        assertEquals(new Statement.Select("trips", Optional.empty()), statements.get(index++));
-        assertEqualsSelectWhere("trips", "distance", Comparison.GREATER_THAN, 100L, statements.get(index++));
+        assertEquals(Statement.createTable("trips").addColumns(Utils.tripsColumns).statement(), statements.get(index++));
+        assertEquals(Statement.copy("trips", "trips.csv"), statements.get(index++));
+        assertEquals(Statement.select("trips").statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
 
         assertEquals(index, statements.size());
     }
@@ -60,15 +48,15 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEqualsSelectWhere("trips", "city", Comparison.EQUALS, "1", statements.get(index++));
-        assertEqualsSelectWhere("trips", "city", Comparison.EQUALS, 1L, statements.get(index++));
-        assertEqualsSelectWhere("trips", "city", Comparison.EQUALS, 1.1, statements.get(index++));
-        assertEqualsSelectWhere("trips", "distance", Comparison.GREATER_THAN, "100", statements.get(index++));
-        assertEqualsSelectWhere("trips", "distance", Comparison.GREATER_THAN, 100L, statements.get(index++));
-        assertEqualsSelectWhere("trips", "distance", Comparison.GREATER_THAN, 100.5, statements.get(index++));
-        assertEqualsSelectWhere("trips", "price", Comparison.LESS_THAN, "50", statements.get(index++));
-        assertEqualsSelectWhere("trips", "price", Comparison.LESS_THAN, 50L, statements.get(index++));
-        assertEqualsSelectWhere("trips", "price", Comparison.LESS_THAN, 50.75, statements.get(index++));
+        assertEquals(Statement.select("trips").where("city", Comparison.EQUALS, "1").statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("city", Comparison.EQUALS, 1L).statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("city", Comparison.EQUALS, 1.1).statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, "100").statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100.5).statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("price", Comparison.LESS_THAN, "50").statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("price", Comparison.LESS_THAN, 50L).statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("price", Comparison.LESS_THAN, 50.75).statement(), statements.get(index++));
 
         assertEquals(index, statements.size());
     }
@@ -138,12 +126,9 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEquals(new Statement.CreateTable("trips", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("distance", ColumnType.LONG),
-                new ColumnSpec("price", ColumnType.DOUBLE))), statements.get(index++));
-        assertEquals(new Statement.Copy("trips", "trips.csv"), statements.get(index++));
-        assertEqualsSelectWhere("trips", "distance", Comparison.GREATER_THAN, 100L, statements.get(index++));
+        assertEquals(Statement.createTable("trips").addColumns(Utils.tripsColumns).statement(), statements.get(index++));
+        assertEquals(Statement.copy("trips", "trips.csv"), statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
 
         assertEquals(index, statements.size());
     }
@@ -161,36 +146,33 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEquals(new Statement.CreateTable("TrIpS", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("Distance", ColumnType.LONG),
-                new ColumnSpec("PRICE", ColumnType.DOUBLE))), statements.get(index++));
-        assertEquals(new Statement.Copy("TrIpS", "trips.csv"), statements.get(index++));
-        assertEqualsSelectWhere("TrIpS", "city", Comparison.EQUALS, "Copenhagen", statements.get(index++));
-        assertEqualsSelectWhere("TrIpS", "Distance", Comparison.GREATER_THAN, 100L, statements.get(index++));
-        assertEqualsSelectWhere("TrIpS", "PRICE", Comparison.LESS_THAN, 50.75, statements.get(index++));
+        assertEquals(Statement.createTable("TrIpS").addColumn("city", ColumnType.STRING).addColumn("Distance", ColumnType.LONG).addColumn("PRICE", ColumnType.DOUBLE).statement(), statements.get(index++));
+        assertEquals(Statement.copy("TrIpS", "trips.csv"), statements.get(index++));
+        assertEquals(Statement.select("TrIpS").where("city", Comparison.EQUALS, "Copenhagen").statement(), statements.get(index++));
+        assertEquals(Statement.select("TrIpS").where("Distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
+        assertEquals(Statement.select("TrIpS").where("PRICE", Comparison.LESS_THAN, 50.75).statement(), statements.get(index++));
 
         assertEquals(index, statements.size());
 
-        assertNotEquals(new Statement.CreateTable("trips", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("Distance", ColumnType.LONG),
-                new ColumnSpec("PRICE", ColumnType.DOUBLE))), statements.get(0));
+        assertNotEquals(Statement.createTable("trips")
+                .addColumn("city", ColumnType.STRING)
+                .addColumn("Distance", ColumnType.LONG)
+                .addColumn("PRICE", ColumnType.DOUBLE).statement(), statements.get(0));
 
-        assertNotEquals(new Statement.CreateTable("TrIpS", List.of(
-                new ColumnSpec("CITY", ColumnType.STRING),
-                new ColumnSpec("Distance", ColumnType.LONG),
-                new ColumnSpec("PRICE", ColumnType.DOUBLE))), statements.get(0));
+        assertNotEquals(Statement.createTable("TrIpS")
+                .addColumn("CITY", ColumnType.STRING)
+                .addColumn("Distance", ColumnType.LONG)
+                .addColumn("PRICE", ColumnType.DOUBLE).statement(), statements.get(0));
 
-        assertNotEquals(new Statement.CreateTable("TrIpS", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("distance", ColumnType.LONG),
-                new ColumnSpec("PRICE", ColumnType.DOUBLE))), statements.get(0));
+        assertNotEquals(Statement.createTable("TrIpS")
+                .addColumn("city", ColumnType.STRING)
+                .addColumn("distance", ColumnType.LONG)
+                .addColumn("PRICE", ColumnType.DOUBLE).statement(), statements.get(0));
 
-        assertNotEquals(new Statement.CreateTable("TrIpS", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("Distance", ColumnType.LONG),
-                new ColumnSpec("price", ColumnType.DOUBLE))), statements.get(0));
+        assertNotEquals(Statement.createTable("TrIpS")
+                .addColumn("city", ColumnType.STRING)
+                .addColumn("Distance", ColumnType.LONG)
+                .addColumn("price", ColumnType.DOUBLE).statement(), statements.get(0));
     }
 
     @Test
@@ -209,12 +191,9 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEquals(new Statement.CreateTable("trips", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("distance", ColumnType.LONG),
-                new ColumnSpec("price", ColumnType.DOUBLE))), statements.get(index++));
-        assertEquals(new Statement.Copy("trips", "trips.csv"), statements.get(index++));
-        assertEqualsSelectWhere("trips", "distance", Comparison.GREATER_THAN, 100L, statements.get(index++));
+        assertEquals(Statement.createTable("trips").addColumns(Utils.tripsColumns).statement(), statements.get(index++));
+        assertEquals(Statement.copy("trips", "trips.csv"), statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
 
         assertEquals(index, statements.size());
     }
@@ -229,8 +208,8 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEqualsSelectWhere("trips", "distance", Comparison.LESS_THAN, -100L, statements.get(index++));
-        assertEqualsSelectWhere("trips", "distance", Comparison.LESS_THAN, -100.5, statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.LESS_THAN, -100L).statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.LESS_THAN, -100.5).statement(), statements.get(index++));
 
         assertEquals(index, statements.size());
     }
@@ -250,16 +229,16 @@ class SqlParserTest {
         Statement s8 = parser.parse("SELECT * FROM trips WHERE price > -0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004940656458412465441765687928682213723650598026143247644255856825006755072702087518652998363616359923797965646954457177309266567103559397963987747960107818781263007131903114045278458171678489821036887186360569987307230500063874091535649843873124733972731696151400317153853980741262385655911710266585566867681870395603106249319452715914924553293054565444011274801297099995419319894090804165633245247571478690147267801593552386115501348035264934720193790268107107491703332226844753335720832431936092382893458368060106011506169809753078342277318329247904982524730776375927247874656084778203734469699533647017972677717585125660551199131504891101451037862738167250955837389733598993664809941164205702637090279242767544565229087538682506419718265533447265625;").getFirst();
         Statement s9 = parser.parse("SELECT * FROM trips WHERE price > -0.0;").getFirst();
 
-        assertEqualsSelectWhere("trips", "distance", Comparison.LESS_THAN,     Long.MAX_VALUE,    s0);
-        assertEqualsSelectWhere("trips", "price",    Comparison.LESS_THAN,     Double.MAX_VALUE,  s1);
-        assertEqualsSelectWhere("trips", "price",    Comparison.LESS_THAN,     Double.MIN_NORMAL, s2);
-        assertEqualsSelectWhere("trips", "price",    Comparison.LESS_THAN,     Double.MIN_VALUE,  s3);
-        assertEqualsSelectWhere("trips", "price",    Comparison.LESS_THAN,     0.0,               s4);
-        assertEqualsSelectWhere("trips", "distance", Comparison.GREATER_THAN,  Long.MIN_VALUE,    s5);
-        assertEqualsSelectWhere("trips", "price",    Comparison.GREATER_THAN, -Double.MAX_VALUE,  s6);
-        assertEqualsSelectWhere("trips", "price",    Comparison.GREATER_THAN, -Double.MIN_NORMAL, s7);
-        assertEqualsSelectWhere("trips", "price",    Comparison.GREATER_THAN, -Double.MIN_VALUE,  s8);
-        assertEqualsSelectWhere("trips", "price",    Comparison.GREATER_THAN, -0.0,               s9);
+        assertEquals(Statement.select("trips").where("distance", Comparison.LESS_THAN,     Long.MAX_VALUE).statement(),    s0);
+        assertEquals(Statement.select("trips").where("price",    Comparison.LESS_THAN,     Double.MAX_VALUE).statement(),  s1);
+        assertEquals(Statement.select("trips").where("price",    Comparison.LESS_THAN,     Double.MIN_NORMAL).statement(), s2);
+        assertEquals(Statement.select("trips").where("price",    Comparison.LESS_THAN,     Double.MIN_VALUE).statement(),  s3);
+        assertEquals(Statement.select("trips").where("price",    Comparison.LESS_THAN,     0.0).statement(),               s4);
+        assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN,  Long.MIN_VALUE).statement(),    s5);
+        assertEquals(Statement.select("trips").where("price",    Comparison.GREATER_THAN, -Double.MAX_VALUE).statement(),  s6);
+        assertEquals(Statement.select("trips").where("price",    Comparison.GREATER_THAN, -Double.MIN_NORMAL).statement(), s7);
+        assertEquals(Statement.select("trips").where("price",    Comparison.GREATER_THAN, -Double.MIN_VALUE).statement(),  s8);
+        assertEquals(Statement.select("trips").where("price",    Comparison.GREATER_THAN, -0.0).statement(),               s9);
     }
 
     @Test
@@ -293,11 +272,23 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEquals(new Statement.Select(List.of("city", "price"), "trips", Optional.empty()), statements.get(index++));
-        assertEquals(new Statement.Select(List.of("distance"), "trips", Optional.of(
-                        new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L)
-                        )), statements.get(index++));
+        assertEquals(Statement.select("trips").columns("city", "price").statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").columns("distance").where("distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
 
         assertEquals(index, statements.size());
+    }
+
+    @Test
+    void parsesSeletLimits() {
+        SqlParser parser = new SqlParser();
+
+        List<Statement> statements = parser.parse("""
+                SELECT * FROM trips LIMIT 5;
+                SELECT * FROM trips WHERE distance > 100 LIMIT -10;""");
+
+        int index = 0;
+
+        assertEquals(Statement.select("trips").limit(5).statement(), statements.get(index++));
+        assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).limit(-10).statement(), statements.get(index++));
     }
 }

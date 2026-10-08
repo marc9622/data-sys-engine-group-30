@@ -3,7 +3,6 @@ package dk.itu.datasys;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
@@ -13,18 +12,13 @@ class SqlPrinterTest {
 
     @Test
     void prettyPrintsEveryStatementShape() {
-        Statement create = new Statement.CreateTable("trips", List.of(
-                new ColumnSpec("city", ColumnType.STRING),
-                new ColumnSpec("distance", ColumnType.LONG),
-                new ColumnSpec("price", ColumnType.DOUBLE)));
+        Statement create = Statement.createTable("trips").addColumns(Utils.tripsColumns).statement();
 
-        Statement copy = new Statement.Copy("trips", "trips.csv");
+        Statement copy = Statement.copy("trips", "trips.csv");
 
-        Statement selectWithWhere = new Statement.Select("trips",
-                Optional.of(new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L)));
+        Statement selectWithWhere = Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).limit(5).statement();
 
-        Statement selectWithoutWhere = new Statement.Select(List.of("city", "price"), "trips",
-                Optional.empty());
+        Statement selectWithoutWhere = Statement.select("trips").columns("city", "price").statement();
 
         SqlPrinter printer = new SqlPrinter();
 
@@ -32,7 +26,7 @@ class SqlPrinterTest {
                 printer.print(create));
         assertEquals("COPY trips FROM 'trips.csv';",
                 printer.print(copy));
-        assertEquals("SELECT * FROM trips WHERE distance > 100;",
+        assertEquals("SELECT * FROM trips WHERE distance > 100 LIMIT 5;",
                 printer.print(selectWithWhere));
         assertEquals("SELECT city, price FROM trips;",
                 printer.print(selectWithoutWhere));
@@ -44,14 +38,10 @@ class SqlPrinterTest {
         SqlPrinter printer = new SqlPrinter();
 
         List<Statement> statements = List.of(
-                new Statement.CreateTable("trips", List.of(
-                        new ColumnSpec("city", ColumnType.STRING),
-                        new ColumnSpec("distance", ColumnType.LONG),
-                        new ColumnSpec("price", ColumnType.DOUBLE))),
-                new Statement.Copy("trips", "trips.csv"),
-                new Statement.Select("trips",
-                        Optional.of(new Statement.Select.Predicate("distance", Comparison.GREATER_THAN, 100L))),
-                new Statement.Select(List.of("city", "price"), "trips", Optional.empty()));
+                Statement.createTable("trips").addColumns(Utils.tripsColumns).statement(),
+                Statement.copy("trips", "trips.csv"),
+                Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(),
+                Statement.select("trips").columns("city", "price").statement());
 
         for (Statement statement : statements) {
             assertEquals(statement, parser.parse(printer.print(statement)).getFirst());

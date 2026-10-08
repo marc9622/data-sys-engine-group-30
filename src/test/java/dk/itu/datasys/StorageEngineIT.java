@@ -106,6 +106,27 @@ class StorageEngineIT {
     }
 
     @Test
+    void limitedSelect(@TempDir Path tmp) {
+        StorageEngine e = new StorageEngine(tmp);
+        List<ColumnSpec> cols = Utils.tripsColumns;
+        e.createTable("trips", cols);
+        Path csv = Utils.resource("trips.csv");
+        e.copyFromCsvFile("trips", csv.toString());
+
+        Executor ex = new Executor(e);
+
+        for (int limit : List.of(0, 5, 10)) {
+            List<Object[]> actualRows = ex.executeScript("SELECT * FROM trips WHERE distance > 20 LIMIT " + limit + ";").get(0);
+            List<Object[]> expectedRows = Utils.tripsRows.stream().filter(r -> (Long) r[1] > 20).limit(limit).toList();
+
+            assertEquals(expectedRows.size(), actualRows.size());
+            for (int i = 0; i < expectedRows.size(); i++) {
+                assertArrayEquals(expectedRows.get(i), actualRows.get(i));
+            }
+        }
+    }
+
+    @Test
     void emptyResultAndErrors(@TempDir Path tmp) {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
