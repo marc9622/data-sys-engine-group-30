@@ -6,7 +6,7 @@ import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 
-public sealed interface Operator permits ScanOperator, MockOperator, AssertOperator, Operator.RowWiseIntermediate, Operator.ExhaustIntermediate {
+public interface Operator {
 
     /**
      * Intializes or resets the operator's internal state.
@@ -39,7 +39,7 @@ public sealed interface Operator permits ScanOperator, MockOperator, AssertOpera
         return rows;
     }
 
-    public static non-sealed abstract class RowWiseIntermediate implements Operator {
+    public static abstract class RowWiseIntermediate implements Operator {
         private final Operator child;
 
         protected RowWiseIntermediate(Operator child) {
@@ -95,7 +95,7 @@ public sealed interface Operator permits ScanOperator, MockOperator, AssertOpera
         protected abstract void closeIntermediate();
     }
 
-    public static non-sealed abstract class ExhaustIntermediate implements Operator {
+    public static abstract class ExhaustIntermediate implements Operator {
         private final Operator child;
 
         private List<Object[]> rows;
