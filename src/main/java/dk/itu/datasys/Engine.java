@@ -119,7 +119,7 @@ public final class Engine {
     }
 
     private static void printUsage() {
-        System.out.println("Usage: ./engine \"SELECT * FROM trips\"");
+        System.out.println("Usage: ./engine -c \"SELECT * FROM trips\"");
         System.out.println("       ./engine -f script.sql");
     }
 
