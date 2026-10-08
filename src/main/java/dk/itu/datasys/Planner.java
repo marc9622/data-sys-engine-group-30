@@ -12,6 +12,7 @@ import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Statement.Select;
 import dk.itu.datasys.ops.FilterOperator;
 import dk.itu.datasys.ops.Operator;
+import dk.itu.datasys.ops.ProjectOperator;
 import dk.itu.datasys.ops.ScanOperator;
 
 public final class Planner {
@@ -58,11 +59,16 @@ public final class Planner {
         }
 
         Operator root = new ScanOperator(engine, tableName, survivingPartitions);
+
         if (select.where().isPresent()) {
             Select.Predicate predicate = select.where().get();
             List<ColumnSpec> schema = engine.schema(tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
             root = new FilterOperator(root, predicate, columnIndex);
+        }
+
+        if (!select.columns().isEmpty()) {
+            root = new ProjectOperator(root, select.columns());
         }
 
         int total = allPartitions.size();

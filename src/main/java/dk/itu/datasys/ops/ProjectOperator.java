@@ -1,16 +1,22 @@
 package dk.itu.datasys.ops;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 
 public final class ProjectOperator extends Operator.RowWiseIntermediate {
-    private final List<ColumnSpec> columns;
-    private int[] mapping = null;
+    private final List<String> columns;
 
-    public ProjectOperator(Operator child, List<ColumnSpec> columns) {
+    private int[] mapping;
+    private List<ColumnSpec> schema;
+
+    public ProjectOperator(Operator child, List<String> columns) {
         super(child);
         this.columns = columns;
+
+        this.mapping = null;
+        this.schema = null;
     }
 
     @Override
@@ -19,16 +25,18 @@ public final class ProjectOperator extends Operator.RowWiseIntermediate {
 
         mapping = columns.stream().mapToInt(column -> {
             for (int sourceColumnIndex = 0; sourceColumnIndex < srcColumnNames.size(); sourceColumnIndex++) {
-                if (srcColumnNames.get(sourceColumnIndex).equals(column.name()))
+                if (srcColumnNames.get(sourceColumnIndex).equals(column))
                     return sourceColumnIndex;
             }
-            throw new IllegalArgumentException("Column " + column.name() + " not found in source schema");
+            throw new IllegalArgumentException("Column " + column + " not found in source schema");
         }).toArray();
+
+        schema = IntStream.of(mapping).mapToObj(srcColumns::get).toList();
     }
 
     @Override
     public List<ColumnSpec> schema() {
-        return columns;
+        return schema;
     }
 
     @Override

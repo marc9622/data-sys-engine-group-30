@@ -18,6 +18,7 @@ class FrontDoorIT {
                 CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
                 COPY trips FROM '%s';
                 SELECT * FROM trips WHERE city = 'Odense';
+                SELECT city, price FROM trips WHERE city = 'Odense';
                 """.formatted(Utils.resource("trips.csv").toString())); 
 
         String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString(); 
@@ -30,10 +31,14 @@ class FrontDoorIT {
             .start();
 
         int exitCode = process.waitFor();
-        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-
         assertEquals(0, exitCode);
-        assertEquals("Odense,95,120.75" + System.lineSeparator(), stdout);
+
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String[] lines = stdout.split(System.lineSeparator());
+
+        assertEquals(2, lines.length);
+        assertEquals("Odense,95,120.75", lines[0]);
+        assertEquals("Odense,120.75", lines[1]);
     }
 
     @Test

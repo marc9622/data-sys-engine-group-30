@@ -124,7 +124,7 @@ class OperatorTest {
             ColumnSpec column = Utils.tripsColumns.get(columnIndex);
 
             List<ColumnSpec> projection = List.of(column);
-            ProjectOperator projectOp = new ProjectOperator(mockOp, projection);
+            ProjectOperator projectOp = new ProjectOperator(mockOp, projection.stream().map(ColumnSpec::name).toList());
 
             int i = columnIndex;
             List<Object[]> projectedRows = Utils.tripsRows.stream().map(row -> new Object[] {row[i]}).toList();
