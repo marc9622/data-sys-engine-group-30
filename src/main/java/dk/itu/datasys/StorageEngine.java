@@ -161,25 +161,6 @@ public final class StorageEngine {
     }
 
     /**
-     * Retrieves rows from a table where the values in the specified columns satisfy the given comparison with the provided constant.
-     * @param tableName the name of the table to query
-     * @param columnName the name of the column to compare
-     * @param comparison the type of comparison to perform
-     * @param constant the constant value to compare against
-     */
-    public List<Object[]> select(String tableName, String columnName, Comparison comparison, Object constant) {
-        requireNonNull(tableName);
-        requireNonNull(columnName);
-        requireNonNull(comparison);
-        requireNonNull(constant);
-
-        return new Executor(this).executeStatement(
-                new Statement.Select(
-                        tableName,
-                        Optional.of(new Statement.Select.Predicate(columnName, comparison, constant))));
-    }
-
-    /**
      * Returns the schema (list of columns) for the given table.
      * @param tableName the name of the table
      */
@@ -205,23 +186,6 @@ public final class StorageEngine {
             if (table == null)
                 throw new IllegalArgumentException("unknown table: " + tableName);
             return List.copyOf(table.partitions);
-        }
-    }
-
-    public void clearAllData() {
-        synchronized (catalog) {
-            for (TableMeta table : catalog.tables.values()) {
-                for (PartitionMeta partition : table.partitions) {
-                    Path partFile = dataDir.resolve(partition.fileName);
-                    try {
-                        Files.deleteIfExists(partFile);
-                    } catch (IOException e) {
-                        throw new RuntimeException("failed to delete partition file: " + partFile, e);
-                    }
-                }
-            }
-            catalog.tables.clear();
-            persistCatalog();
         }
     }
 
