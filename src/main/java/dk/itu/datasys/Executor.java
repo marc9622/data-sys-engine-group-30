@@ -31,21 +31,19 @@ public final class Executor {
         MDC.put("sessionId", UUID.randomUUID().toString());
         MDC.put("statementNumber", "0");
 
-         try {
-        int statementNumber = 0;
-        List<List<Object[]>> results = new ArrayList<>(); 
+        try {
+            List<List<Object[]>> results = new ArrayList<>(); 
 
-        for (Statement statement : parser.parse(sqlText)){
+            List<Statement> statements = parser.parse(sqlText);
+            for (int statementNumber = 0;statementNumber < statements.size(); statementNumber++){
+                Statement statement = statements.get(statementNumber);
+                MDC.put("statementNumber", String.valueOf(statementNumber + 1));
+                LOGGER.debug("executing statement={}", statement);
 
-            statementNumber++;
-            MDC.put("statementNumber", String.valueOf(statementNumber));
-            LOGGER.debug("executing statement={}", statement);
-
-            results.add(executeStatement(statement));
-        } 
-         return results;
-        
-    } finally {
+                results.add(executeStatement(statement));
+            } 
+            return results;
+        } finally {
             MDC.put("statementNumber", "0");
             LOGGER.debug("engine stopping");
             MDC.clear();
