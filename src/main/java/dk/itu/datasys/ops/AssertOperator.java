@@ -6,32 +6,36 @@ import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 
-public class AssertOperator extends Operator.Intermediate {
+public final class AssertOperator implements Operator {
+
+    private final Operator actual;
     private final List<Object[]> rowsExpected;
     private int rowsCurrent = 0;
     private boolean isOpen = false;
 
     public AssertOperator(Operator actual, List<Object[]> rowsExpected) {
-        super(actual);
+        this.actual = actual;
         this.rowsExpected = Objects.requireNonNull(rowsExpected);
     }
 
     @Override
-    protected void openIntermediate() {
+    public void open() {
+        actual.open();
+
         isOpen = true;
         rowsCurrent = 0;
     }
 
     @Override
     public List<ColumnSpec> schema() {
-        return childSchema();
+        return actual.schema();
     }
 
     @Override
-    protected Object[] nextIntermediate() {
+    public Object[] next() {
         assertIsOpen();
 
-        Object[] rowActual = childNext();
+        Object[] rowActual = actual.next();
         if (rowActual == null) {
             if (rowsCurrent != rowsExpected.size())
                 throw new AssertionError("Fewer rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
@@ -50,11 +54,13 @@ public class AssertOperator extends Operator.Intermediate {
     }
 
     @Override
-    protected void closeIntermediate() {
+    public void close() {
         assertIsOpen();
         isOpen = false;
         if (rowsCurrent < rowsExpected.size())
             throw new AssertionError("Fewer rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
+
+        actual.close();
     }
 
     private void assertIsOpen() {

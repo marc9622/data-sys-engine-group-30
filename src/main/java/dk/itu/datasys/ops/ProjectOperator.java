@@ -4,7 +4,7 @@ import java.util.List;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 
-public final class ProjectOperator extends Operator.Intermediate {
+public final class ProjectOperator extends Operator.RowWiseIntermediate {
     private final List<ColumnSpec> columns;
     private int[] mapping = null;
 
@@ -14,14 +14,13 @@ public final class ProjectOperator extends Operator.Intermediate {
     }
 
     @Override
-    protected void openIntermediate() {
-        List<String> sourceColumnNames = childSchema().stream().map(ColumnSpec::name).toList();
+    protected void openIntermediate(List<ColumnSpec> srcColumns) {
+        List<String> srcColumnNames = srcColumns.stream().map(ColumnSpec::name).toList();
 
         mapping = columns.stream().mapToInt(column -> {
-            for (int sourceColumnIndex = 0; sourceColumnIndex < sourceColumnNames.size(); sourceColumnIndex++) {
-                if (sourceColumnNames.get(sourceColumnIndex).equals(column.name())) {
+            for (int sourceColumnIndex = 0; sourceColumnIndex < srcColumnNames.size(); sourceColumnIndex++) {
+                if (srcColumnNames.get(sourceColumnIndex).equals(column.name()))
                     return sourceColumnIndex;
-                }
             }
             throw new IllegalArgumentException("Column " + column.name() + " not found in source schema");
         }).toArray();
@@ -33,17 +32,12 @@ public final class ProjectOperator extends Operator.Intermediate {
     }
 
     @Override
-    protected Object[] nextIntermediate() {
-        Object[] row = childNext();
-        if (row == null) {
-            return null;
-        }
-
+    protected NextResult nextIntermediate(Object[] row) {
         Object[] result = new Object[mapping.length];
         for (int i = 0; i < mapping.length; i++) {
             result[i] = row[mapping[i]];
         }
-        return result;
+        return NextResult.of(result);
     }
 
     @Override

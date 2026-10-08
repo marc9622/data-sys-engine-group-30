@@ -1,11 +1,12 @@
 package dk.itu.datasys.ops;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 
-public sealed interface Operator permits Operator.Intermediate, ScanOperator, MockOperator {
+public sealed interface Operator permits ScanOperator, MockOperator, AssertOperator, Operator.RowWiseIntermediate, Operator.ExhaustIntermediate {
 
     /**
      * Intializes or resets the operator's internal state.
@@ -30,37 +31,101 @@ public sealed interface Operator permits Operator.Intermediate, ScanOperator, Mo
     void close();
 
 
-    public static non-sealed abstract class Intermediate implements Operator {
+    default List<Object[]> exhaust() {
+        List<Object[]> rows = new ArrayList<>();
+        Object[] row;
+        while ((row = next()) != null)
+            rows.add(row);
+        return rows;
+    }
+
+    public static non-sealed abstract class RowWiseIntermediate implements Operator {
         private final Operator child;
 
-        protected Intermediate(Operator child) {
+        protected RowWiseIntermediate(Operator child) {
             this.child = Objects.requireNonNull(child);
         }
-
-
-        protected final List<ColumnSpec> childSchema() {
-            return child.schema();
-        }
-
-        protected final Object[] childNext() {
-            return child.next();
-        }
-
 
         @Override
         public final void open() {
             child.open();
-            openIntermediate();
+            openIntermediate(child.schema());
         }
 
-        protected abstract void openIntermediate();
+        protected abstract void openIntermediate(List<ColumnSpec> childSchema);
+
+        @Override
+        public List<ColumnSpec> schema() {
+            return child.schema();
+        }
+
+        protected static sealed interface NextResult permits NextResult.Row, NextResult.Retry, NextResult.Exhausted {
+            public static final record Row(Object[] row) implements NextResult {}
+            public static final class Retry implements NextResult {}
+            public static final class Exhausted implements NextResult {}
+
+            public static NextResult of(Object[] row) { return new Row(row); }
+            public static NextResult retry = new Retry();
+            public static NextResult exhausted = new Exhausted();
+        }
 
         @Override
         public final Object[] next() {
-            return nextIntermediate();
+            while (true) {
+                Object[] childRow = child.next();
+                if (childRow == null)
+                    return null;
+
+                switch (nextIntermediate(childRow)) {
+                    case NextResult.Row(Object[] row) -> { return row; }
+                    case NextResult.Retry _ -> { continue; }
+                    case NextResult.Exhausted _ -> { return null; }
+                }
+            }
         }
 
-        protected abstract Object[] nextIntermediate();
+        protected abstract NextResult nextIntermediate(Object[] childNext);
+
+        @Override
+        public final void close() {
+            closeIntermediate();
+            child.close();
+        }
+
+        protected abstract void closeIntermediate();
+    }
+
+    public static non-sealed abstract class ExhaustIntermediate implements Operator {
+        private final Operator child;
+
+        private List<Object[]> rows;
+        private int rowCurrent;
+
+        protected ExhaustIntermediate(Operator child) {
+            this.child = Objects.requireNonNull(child);
+        }
+
+        @Override
+        public final void open() {
+            child.open();
+            rows = openAndExhaustIntermediate(child.schema(), child.exhaust());
+            rowCurrent = 0;
+        }
+
+        protected abstract List<Object[]> openAndExhaustIntermediate(List<ColumnSpec> childSchema, List<Object[]> childRows);
+
+        @Override
+        public List<ColumnSpec> schema() {
+            return child.schema();
+        }
+
+        @Override
+        public final Object[] next() {
+            if (rowCurrent == rows.size())
+                return null;
+
+            return rows.get(rowCurrent++);
+        }
 
         @Override
         public final void close() {
