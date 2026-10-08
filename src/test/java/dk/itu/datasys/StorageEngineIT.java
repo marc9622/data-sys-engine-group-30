@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,7 +16,7 @@ class StorageEngineIT {
     @Test
     void schemaPersistenceAndDuplicate(@TempDir Path tmp) {
         StorageEngine e1 = new StorageEngine(tmp);
-        List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING));
+        List<ColumnSpec> cols = Utils.tripsColumns.subList(0, 1);
         e1.createTable("t", cols);
 
         // new engine should see table and reject duplicate create
@@ -27,7 +28,7 @@ class StorageEngineIT {
     void roundTripAndTypes(@TempDir Path tmp) {
         System.setProperty("maxRowsPerPartition", "2");
         StorageEngine e = new StorageEngine(tmp);
-        List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
+        List<ColumnSpec> cols = Utils.tripsColumns;
         e.createTable("trips", cols);
         Path csv = Utils.resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
@@ -35,9 +36,9 @@ class StorageEngineIT {
         List<Object[]> all = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
         assertEquals(8, all.size());
         for (Object[] r : all) {
-            assertTrue(r[0] instanceof String);
-            assertTrue(r[1] instanceof Long);
-            assertTrue(r[2] instanceof Double);
+            assertInstanceOf(String.class, r[0]);
+            assertInstanceOf(Long.class, r[1]);
+            assertInstanceOf(Double.class, r[2]);
         }
     }
 
@@ -45,22 +46,63 @@ class StorageEngineIT {
     void comparisonsAllTypes(@TempDir Path tmp) {
         System.setProperty("maxRowsPerPartition", "2");
         StorageEngine e = new StorageEngine(tmp);
-        List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
+        List<ColumnSpec> cols = Utils.tripsColumns;
         e.createTable("trips", cols);
         Path csv = Utils.resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
 
+        Executor ex = new Executor(e);
+
         // STRING equals
-        List<Object[]> s = new Executor(e).executeScript("SELECT * FROM trips WHERE city = 'Copenhagen';").get(0);
+        List<Object[]> s = ex.executeScript("SELECT * FROM trips WHERE city = 'Copenhagen';").get(0);
         assertEquals(3, s.size());
 
         // LONG greater
-        List<Object[]> l = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > 100;").get(0);
+        List<Object[]> l = ex.executeScript("SELECT * FROM trips WHERE distance > 100;").get(0);
         assertEquals(4, l.size());
 
         // DOUBLE less
-        List<Object[]> d = new Executor(e).executeScript("SELECT * FROM trips WHERE price < 50.0;").get(0);
+        List<Object[]> d = ex.executeScript("SELECT * FROM trips WHERE price < 50.0;").get(0);
         assertEquals(2, d.size());
+    }
+
+    @Test
+    void projectionSelect(@TempDir Path tmp) {
+        StorageEngine e = new StorageEngine(tmp);
+        List<ColumnSpec> sourceColumns = Utils.tripsColumns;
+        e.createTable(Utils.tripsName, sourceColumns);
+        Path csv = Utils.resource("trips.csv");
+        e.copyFromCsvFile(Utils.tripsName, csv.toString());
+
+        Object[] testedRow = Utils.tripsRows
+            .stream()
+            .filter(row -> row[0].equals("Odense"))
+            .findAny()
+            .get();
+
+        List<List<Integer>> mappings = Utils.Streams
+            .powerSetOf(IntStream.range(0, sourceColumns.size()).boxed().toList())
+            .filter(set -> !set.isEmpty())
+            .flatMap(subset -> Utils.Streams.permutationsOf(subset))
+            .toList();
+
+        Executor ex = new Executor(e);
+
+        for (List<Integer> mapping : mappings) {
+            List<String> projectionColumns = mapping.stream().map(sourceColumns::get).map(ColumnSpec::name).toList();
+            String projectionString = String.join(", ", projectionColumns);
+
+            List<Object[]> rows = ex.executeScript(
+                    "SELECT " + projectionString +
+                    " FROM " + Utils.tripsName +
+                    " WHERE city = 'Odense';"
+                    ).get(0);
+            assertEquals(1, rows.size());
+
+            Object[] expected = mapping.stream().map(i -> testedRow[i]).toArray();
+            Object[] actual = rows.get(0);
+            assertArrayEquals(expected, actual);
+        }
     }
 
     @Test
