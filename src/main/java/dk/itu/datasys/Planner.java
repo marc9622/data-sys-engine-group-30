@@ -11,6 +11,7 @@ import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Statement.Select;
 import dk.itu.datasys.ops.FilterOperator;
+import dk.itu.datasys.ops.LimitOperator;
 import dk.itu.datasys.ops.Operator;
 import dk.itu.datasys.ops.ProjectOperator;
 import dk.itu.datasys.ops.ScanOperator;
@@ -69,6 +70,10 @@ public final class Planner {
 
         if (!select.columns().isEmpty()) {
             root = new ProjectOperator(root, select.columns());
+        }
+
+        if (select.limit().isPresent()) {
+            root = new LimitOperator(root, select.limit().get());
         }
 
         int total = allPartitions.size();

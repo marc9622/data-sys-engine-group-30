@@ -11,14 +11,15 @@ columnType  : STRING | LONG | DOUBLE ;
 
 copy        : COPY IDENTIFIER FROM STRING_LITERAL ;
 
-select      : SELECT ('*' | columnList) FROM IDENTIFIER (WHERE predicate)? ;
+select      : SELECT ('*' | columnList) FROM IDENTIFIER (WHERE predicate)? (LIMIT limit)? ;
 columnList  : IDENTIFIER (',' IDENTIFIER)* ;
 predicate   : IDENTIFIER comparison=('=' | '<' | '>') literal ;
+limit       : LONG_LITERAL ;
 literal     : STRING_LITERAL | LONG_LITERAL | DOUBLE_LITERAL ;
 
 // Lexer. Keyword rules MUST precede IDENTIFIER, or IDENTIFIER swallows them.
 CREATE : 'CREATE' ;   TABLE : 'TABLE' ;   COPY : 'COPY' ;   FROM : 'FROM' ;
-SELECT : 'SELECT' ;   WHERE : 'WHERE' ;
+SELECT : 'SELECT' ;   WHERE : 'WHERE' ;   LIMIT : 'LIMIT' ;
 STRING : 'STRING' ;   LONG : 'LONG' ;   DOUBLE : 'DOUBLE' ;
 
 IDENTIFIER      : [A-Z_] [A-Z_0-9]* ;        // caseInsensitive covers a–z

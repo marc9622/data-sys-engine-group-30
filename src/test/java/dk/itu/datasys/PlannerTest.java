@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -12,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.Select;
+import static dk.itu.datasys.Statement.*;
 import dk.itu.datasys.ops.FilterOperator;
 import dk.itu.datasys.ops.ScanOperator;
 
@@ -33,8 +33,7 @@ class PlannerTest {
         engine.createTable("trips", COLUMNS);
         engine.copyFromCsvFile("trips", Utils.resource("trips_sorted.csv").toString());
         Planner planner = new Planner(engine);
-        Select select = new Select("trips", Optional.of(
-                new Select.Predicate("distance", Comparison.EQUALS, 95L)));
+        Select select = select("trips").where("distance", Comparison.EQUALS, 95L).statement();
 
         Plan plan = planner.plan(select);
 
@@ -49,7 +48,7 @@ class PlannerTest {
         engine.copyFromCsvFile("trips", Utils.resource("trips_sorted.csv").toString());
         Planner planner = new Planner(engine);
 
-        Plan plan = planner.plan(new Select("trips", Optional.empty()));
+        Plan plan = planner.plan(select("trips").statement());
 
         assertInstanceOf(ScanOperator.class, plan.root());
         assertEquals(new StorageEngine.ScanStats(4, 4, 0), plan.scanStats());
