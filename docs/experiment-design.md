@@ -31,7 +31,13 @@ each level, and uses a fresh data directory for every run. It reads the
 including the commit, OS, machine, Python, and JVM versions, are recorded in
 `results/experiment/metadata.json`.
 
-For a quick smoke test, use a smaller workload and fewer levels/runs:
+
+The elapsed time reported for each run is the sum of the `SELECT` planning and
+execution times. It excludes process startup, SQL parsing, `CREATE TABLE`, CSV
+loading, partition creation, and process shutdown. The raw results also record
+the planning and execution components separately.
+
+Test that is works using a smaller workload and fewer levels/runs:
 
 ```sh
 python3 scripts/generate_experiment_data.py --rows 1000
@@ -40,5 +46,3 @@ python3 scripts/run_experiment.py --runs 2 --levels 2 16 --skip-build
 
 # Hypothesis
 We hypothesize that the fraction of read partitions after pruning will increase as the amount of rows per partition increases.
-
-

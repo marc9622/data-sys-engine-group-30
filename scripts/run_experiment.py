@@ -17,7 +17,13 @@ from pathlib import Path
 
 DEFAULT_LEVELS = (2, 4, 8, 16, 32, 64, 128, 256, 512, 1024)
 DECISION_RE = re.compile(r"decision=(READ|PRUNED)")
-WORK_DIR_CLEANUP_ATTEMPTS = 3
+SELECT_TIMING_RE = re.compile(
+    r"select planningMs=(?P<planning_ms>[0-9.]+) "
+    r"executionMs=(?P<execution_ms>[0-9.]+) "
+    r"elapsedMs=(?P<elapsed_ms>[0-9.]+)"
+)
+WORK_DIR_CLEANUP_ATTEMPTS = 8
+WORK_DIR_CLEANUP_DELAY_SECONDS = 0.1
 
 
 def run_engine(
@@ -30,7 +36,6 @@ def run_engine(
         f"{environment.get('ENGINE_JAVA_OPTS', '')} "
         f"-DmaxRowsPerPartition={level}"
     ).strip()
-    start = time.perf_counter()
     completed = subprocess.run(
         command,
         cwd=run_dir,
@@ -40,14 +45,22 @@ def run_engine(
         text=True,
         check=False,
     )
-    elapsed_ms = (time.perf_counter() - start) * 1000
     if completed.returncode != 0:
         raise RuntimeError(
             f"engine failed for level {level} in {run_dir}:\n{completed.stderr}"
         )
 
     log_path = run_dir / "logs" / "engine.log"
-    decisions = DECISION_RE.findall(log_path.read_text(encoding="utf-8"))
+    log = log_path.read_text(encoding="utf-8")
+    decisions = DECISION_RE.findall(log)
+    timings = SELECT_TIMING_RE.findall(log)
+    if len(timings) != 1:
+        raise RuntimeError(
+            f"expected one SELECT timing entry in {log_path}, found {len(timings)}"
+        )
+    planning_ms, execution_ms, elapsed_ms = (
+        float(value) for value in timings[0]
+    )
     partitions_read = decisions.count("READ")
     partitions_pruned = decisions.count("PRUNED")
     partitions_total = partitions_read + partitions_pruned
@@ -61,6 +74,8 @@ def run_engine(
         "partitions_pruned": partitions_pruned,
         "read_fraction": partitions_read / partitions_total,
         "elapsed_ms": elapsed_ms,
+        "planning_ms": planning_ms,
+        "execution_ms": execution_ms,
     }
 
 
@@ -80,6 +95,10 @@ def mean_rows(raw_rows: list[dict[str, object]]) -> list[dict[str, object]]:
                 "partition_rows": level,
                 "runs": len(rows),
                 "mean_elapsed_ms": sum(float(row["elapsed_ms"]) for row in rows)
+                / len(rows),
+                "mean_planning_ms": sum(float(row["planning_ms"]) for row in rows)
+                / len(rows),
+                "mean_execution_ms": sum(float(row["execution_ms"]) for row in rows)
                 / len(rows),
                 "partitions_total": rows[0]["partitions_total"],
                 "partitions_read": rows[0]["partitions_read"],
@@ -134,7 +153,7 @@ def clean_work_dir(work_dir: Path) -> None:
                     f"could not remove existing work directory {work_dir}; "
                     "close applications viewing it and try again"
                 ) from error
-            time.sleep(0.1)
+            time.sleep(WORK_DIR_CLEANUP_DELAY_SECONDS * (attempt + 1))
 
 
 def main() -> None:
@@ -205,6 +224,8 @@ def main() -> None:
         "partition_rows",
         "run",
         "elapsed_ms",
+        "planning_ms",
+        "execution_ms",
         "partitions_total",
         "partitions_read",
         "partitions_pruned",
@@ -219,6 +240,8 @@ def main() -> None:
             "partition_rows",
             "runs",
             "mean_elapsed_ms",
+            "mean_planning_ms",
+            "mean_execution_ms",
             "partitions_total",
             "partitions_read",
             "partitions_pruned",

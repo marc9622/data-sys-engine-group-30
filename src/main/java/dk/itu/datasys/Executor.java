@@ -69,11 +69,14 @@ public final class Executor {
     }
 
     public List<Object[]> executeSelect(Statement.Select select) {
+        long planningStart = System.nanoTime();
         Plan plan = planner.plan(select);
+        double planningMs = (System.nanoTime() - planningStart) / 1_000_000.0;
         engine.setLastScanStats(plan.scanStats());
 
         Operator root = plan.root();
         List<Object[]> rows = new ArrayList<>();
+        long executionStart = System.nanoTime();
         root.open();
         try {
             Object[] row;
@@ -82,6 +85,9 @@ public final class Executor {
         } finally {
             root.close();
         }
+        double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
+        LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
+                planningMs, executionMs, planningMs + executionMs);
         return rows;
     }
 }
