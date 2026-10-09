@@ -17,6 +17,7 @@ from pathlib import Path
 
 DEFAULT_LEVELS = (2, 4, 8, 16, 32, 64, 128, 256, 512, 1024)
 DECISION_RE = re.compile(r"decision=(READ|PRUNED)")
+WORK_DIR_CLEANUP_ATTEMPTS = 3
 
 
 def run_engine(
@@ -122,6 +123,20 @@ def collect_metadata(
     }
 
 
+def clean_work_dir(work_dir: Path) -> None:
+    for attempt in range(WORK_DIR_CLEANUP_ATTEMPTS):
+        try:
+            shutil.rmtree(work_dir)
+            return
+        except OSError as error:
+            if attempt == WORK_DIR_CLEANUP_ATTEMPTS - 1:
+                raise RuntimeError(
+                    f"could not remove existing work directory {work_dir}; "
+                    "close applications viewing it and try again"
+                ) from error
+            time.sleep(0.1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run one warmup and the measured runs for every partition-size level."
@@ -164,7 +179,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     work_dir = (args.work_dir or output_dir / "runs").resolve()
     if work_dir.exists():
-        shutil.rmtree(work_dir)
+        clean_work_dir(work_dir)
     work_dir.mkdir(parents=True)
 
     raw_rows: list[dict[str, object]] = []
