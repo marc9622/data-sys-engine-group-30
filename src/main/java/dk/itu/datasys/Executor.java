@@ -35,7 +35,7 @@ public final class Executor {
             List<List<Object[]>> results = new ArrayList<>(); 
 
             List<Statement> statements = parser.parse(sqlText);
-            for (int statementNumber = 0;statementNumber < statements.size(); statementNumber++){
+            for (int statementNumber = 0; statementNumber < statements.size(); statementNumber++){
                 Statement statement = statements.get(statementNumber);
                 MDC.put("statementNumber", String.valueOf(statementNumber + 1));
                 LOGGER.debug("executing statement={}", statement);

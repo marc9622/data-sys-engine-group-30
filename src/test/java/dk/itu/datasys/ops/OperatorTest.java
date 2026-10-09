@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -124,7 +125,7 @@ class OperatorTest {
             ColumnSpec column = Utils.tripsColumns.get(columnIndex);
 
             List<ColumnSpec> projection = List.of(column);
-            ProjectOperator projectOp = new ProjectOperator(mockOp, projection);
+            ProjectOperator projectOp = new ProjectOperator(mockOp, projection.stream().map(ColumnSpec::name).toList());
 
             int i = columnIndex;
             List<Object[]> projectedRows = Utils.tripsRows.stream().map(row -> new Object[] {row[i]}).toList();
@@ -143,7 +144,13 @@ class OperatorTest {
 
         MockOperator mockOp = new MockOperator(Utils.tripsColumns, duplicatedRows);
 
-        for (List<Integer> columns : List.of(List.of(0), List.of(1), List.of(2), List.of(0, 2), List.of(0, 1, 2))) {
+        List<List<Integer>> mappings = Utils.Streams
+            .powerSetOf(IntStream.range(0, Utils.tripsColumns.size()).boxed().toList())
+            .filter(set -> !set.isEmpty())
+            .flatMap(subset -> Utils.Streams.permutationsOf(subset))
+            .toList();
+
+        for (List<Integer> columns : mappings) {
             DistinctOperator distinctOp = new DistinctOperator(mockOp, new HashSet<>(columns));
 
             class Wrapper {
