@@ -78,6 +78,7 @@ public final class StorageEngine {
         if (columns.isEmpty())
             throw new IllegalArgumentException("empty column list");
 
+        long startMs = System.currentTimeMillis();
         synchronized (catalog) {
             if (catalog.tables.containsKey(tableName))
                 throw new IllegalArgumentException("table already exists: " + tableName);
@@ -92,7 +93,9 @@ public final class StorageEngine {
             TableMeta meta = new TableMeta(new ArrayList<>(columns));
             catalog.tables.put(tableName, meta);
             persistCatalog();
-            LOGGER.debug("table={} cols={} ", tableName, columns.size());
+
+            long durationMs = System.currentTimeMillis() - startMs;
+            LOGGER.debug("created table table={} cols={} durationMs={}", tableName, columns.size(), durationMs);
         }
     }
 
@@ -104,6 +107,8 @@ public final class StorageEngine {
     public void copyFromCsvFile(String tableName, String csvFilePath) {
         requireNonNull(tableName);
         requireNonNull(csvFilePath);
+
+        long startMs = System.currentTimeMillis();
 
         TableMeta table;
         synchronized (catalog) {
@@ -120,7 +125,6 @@ public final class StorageEngine {
         if (!Files.exists(csv))
             throw new IllegalArgumentException("csv file not found: " + csvFilePath);
 
-        long start = System.currentTimeMillis();
         int totalRows = 0;
         int partitions = 0;
 
@@ -149,12 +153,12 @@ public final class StorageEngine {
                 partitions++;
             }
 
-            long dur = System.currentTimeMillis() - start;
+            long durationMs = System.currentTimeMillis() - startMs;
             synchronized (catalog) {
                 persistCatalog();
             }
-            LOGGER.debug("table={} file={} rows={} partitions={} durationMs={}", tableName, csvFilePath, totalRows, partitions, dur);
 
+            LOGGER.debug("copied from file table={} file={} rows={} partitions={} durationMs={}", tableName, csvFilePath, totalRows, partitions, durationMs);
         } catch (IOException e) {
             throw new RuntimeException("io error copying file", e);
         }
@@ -172,6 +176,17 @@ public final class StorageEngine {
             if (table == null)
                 throw new IllegalArgumentException("unknown table: " + tableName);
             return List.copyOf(table.columns);
+        }
+    }
+
+    /**
+     * Returns true if the table exists in the catalog, false otherwise.
+     */
+    public boolean doesTableExist(String tableName) {
+        requireNonNull(tableName);
+
+        synchronized (catalog) {
+            return catalog.tables.containsKey(tableName);
         }
     }
 

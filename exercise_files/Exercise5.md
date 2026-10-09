@@ -125,14 +125,14 @@ This creates a tag that the teaching assistant will check out to validate your p
 
 ## Definition of done
 
-- [ ] `mvn package` produces `target/engine.jar`; the executable `engine` script runs `-c` and `-f` and is committed.
-- [ ] `logs` table created, a snapshot of `engine.log` ingested, and the session, statement, and error analyses run through your own engine.
-- [ ] One statement traced end to end in the debugger by every team member.
-- [ ] Methods without engine callers deleted and associated tests deleted.
-- [ ] `docs/experiment-design.md` merged.
+- [x] `mvn package` produces `target/engine.jar`; the executable `engine` script runs `-c` and `-f` and is committed.
+- [x] `logs` table created, a snapshot of `engine.log` ingested, and the session, statement, and error analyses run through your own engine.
+- [x] One statement traced end to end in the debugger by every team member.
+- [x] Methods without engine callers deleted and associated tests deleted.
+- [x] `docs/experiment-design.md` merged.
 - [ ] All required tests green in CI; PRs reviewed.
 - [ ] Tag `v0.5` is pushed.
-- [ ] Low-heap runs done and larger-than-memory analysis written (optional).
+- [x] Low-heap runs done and larger-than-memory analysis written (optional).
 
 ## Outlook
 
