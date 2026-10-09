@@ -21,7 +21,7 @@ public final class SqlParser {
     public List<Statement> parse(String sqlText) {
         Objects.requireNonNull(sqlText, "sqlText");  
 
-        long start = System.currentTimeMillis();
+        long startMs = System.currentTimeMillis();
         try {
             SqlLexer lexer = new SqlLexer(CharStreams.fromString(sqlText));
             lexer.removeErrorListeners();
@@ -36,11 +36,11 @@ public final class SqlParser {
             @SuppressWarnings("unchecked")
             List<Statement> statements = (List<Statement>) new SqlAstBuilder().visit(script);
 
-            long durationMs = System.currentTimeMillis() - start;
+            long durationMs = System.currentTimeMillis() - startMs;
             LOGGER.debug("statements={} durationMs={}", statements.size(), durationMs);
             return statements;
         } catch (SqlParseException e) {
-            long durationMs = System.currentTimeMillis() - start;
+            long durationMs = System.currentTimeMillis() - startMs;
             LOGGER.error("failed line={} col={} durationMs={}", e.line(), e.column(), durationMs);
             throw e;
         }

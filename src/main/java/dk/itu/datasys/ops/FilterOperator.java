@@ -23,8 +23,10 @@ public final class FilterOperator extends Operator.RowWiseIntermediate {
         super(child);
         this.predicate = Objects.requireNonNull(predicate);
 
-        if (columnIndex < 0)
+        if (columnIndex < 0) {
+            LOGGER.error("column index not non-negative columnIndex={}", columnIndex);
             throw new IllegalArgumentException("column index must be non-negative");
+        }
         this.columnIndex = columnIndex;
     }
 
