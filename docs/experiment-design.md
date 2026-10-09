@@ -16,8 +16,29 @@ The output directory contains `trips.csv`, `experiment.sql`, and `metadata.json`
 Test data will be generated with a script and a fixed seed. The data will be unsorted.
 We will record the mean across 10 runs for all of the levels excluding a singular warmup run.
 
+Run the complete sweep from the repository root with:
+
+```sh
+python3 scripts/generate_experiment_data.py
+python3 scripts/run_experiment.py
+```
+
+The runner packages the engine, performs one warmup and then 10 measured runs for
+each level, and uses a fresh data directory for every run. It reads the
+`READ`/`PRUNED` partition decisions from the engine log. Results are written to
+`results/experiment/means.csv` and
+`results/experiment/raw.csv` (one row per measured run). The run conditions,
+including the commit, OS, machine, Python, and JVM versions, are recorded in
+`results/experiment/metadata.json`.
+
+For a quick smoke test, use a smaller workload and fewer levels/runs:
+
+```sh
+python3 scripts/generate_experiment_data.py --rows 1000
+python3 scripts/run_experiment.py --runs 2 --levels 2 16 --skip-build
+```
+
 # Hypothesis
 We hypothesize that the fraction of read partitions after pruning will increase as the amount of rows per partition increases.
-
 
 

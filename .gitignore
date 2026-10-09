@@ -3,6 +3,7 @@
 target/
 logs/
 data/
+results/
 .classpath
 .factorypath
 .project
@@ -22,4 +23,3 @@ dependency-reduced-pom.xml
 *.nix
 .direnv/
 .envrc
-
