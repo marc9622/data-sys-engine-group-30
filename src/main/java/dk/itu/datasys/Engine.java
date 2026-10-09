@@ -25,20 +25,31 @@ public final class Engine {
     }
 
     private static void run(Iterator<String> args) throws IOException {
-        boolean queryStatementSupplied = false;
-        boolean queryFileSupplied = false;
+        enum CliParseState {
+            EMPTY,
+            QUERY_STATEMENT,
+            QUERY_FILE,
+        }
+
+        CliParseState cliParseState = CliParseState.EMPTY;
 
         String sql = "";
         while (args.hasNext()) {
-            switch (args.next()) {
+            cliParseState = switch (args.next()) {
                 case "-f" -> {
-                    if (queryFileSupplied) {
-                        System.out.println("Only one `-f` argument is allowed per command");
-                        printUsage();
-                        System.exit(1);
-                    }
-
-                    queryFileSupplied = true;
+                    switch (cliParseState) {
+                        case EMPTY -> {}
+                        case QUERY_STATEMENT -> {
+                            System.out.println("Cannot specify `-f` together with a `-c` query statement");
+                            printUsage();
+                            System.exit(1);
+                        }
+                        case QUERY_FILE -> {
+                            System.out.println("Only one `-f` argument is allowed per command");
+                            printUsage();
+                            System.exit(1);
+                        }
+                    };
 
                     if (!args.hasNext()) {
                         System.out.println("Missing file path after `-f`");
@@ -55,24 +66,49 @@ public final class Engine {
                         System.out.println("Unknown file `" + filePath + "`");
                         System.exit(1);
                     }
-                }
-                case String query -> {
-                    queryStatementSupplied = true;
 
-                    sql += " " + query;
+                    yield CliParseState.QUERY_FILE;
                 }
-            }
+                case "-c" -> {
+                    switch (cliParseState) {
+                        case EMPTY -> {}
+                        case QUERY_STATEMENT -> {
+                            System.out.println("Only one `-c` argument is allowed per command");
+                            printUsage();
+                            System.exit(1);
+                        }
+                        case QUERY_FILE -> {
+                            System.out.println("Cannot specify `-c` together with a `-f` query file");
+                            printUsage();
+                            System.exit(1);
+                        }
+                    }
 
-            if (queryStatementSupplied && queryFileSupplied) {
-                System.out.println("Cannot specify both a command line query and a query file");
-                System.exit(1);
-            }
+                    yield CliParseState.QUERY_STATEMENT;
+                }
+                case String arg -> {
+                    switch (cliParseState) {
+                        case EMPTY, QUERY_FILE -> {
+                            System.out.println("Unknown argument `" + arg + "`");
+                            printUsage();
+                            System.exit(1);
+                        }
+                        case QUERY_STATEMENT -> {
+                            sql += " " + arg;
+                        }
+                    }
+
+                    yield CliParseState.QUERY_STATEMENT;
+                }
+            };
         }
 
-        if (queryStatementSupplied) {
+        assert cliParseState != CliParseState.EMPTY;
+
+        if (cliParseState == CliParseState.QUERY_STATEMENT) {
             sql = sql.stripTrailing();
             if (!sql.endsWith(";"))
-                sql = sql + ";";
+                sql += ";";
         }
 
         Executor executor = new Executor(new StorageEngine(Path.of("data")));
@@ -83,7 +119,7 @@ public final class Engine {
     }
 
     private static void printUsage() {
-        System.out.println("Usage: ./engine \"SELECT * FROM trips\"");
+        System.out.println("Usage: ./engine -c \"SELECT * FROM trips\"");
         System.out.println("       ./engine -f script.sql");
     }
 
