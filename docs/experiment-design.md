@@ -1,14 +1,23 @@
 # Factors and levels:
 The experiment will have two factors; maximum number of rows per partition (x axis) and the fraction of partitions read after pruning (y axis). The fraction of partitions read after pruning will be measured as; partitions read / (partitions read + partitions pruned). The x axis will have 10 levels: 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024.
 
+# Workload
+`scripts/generate_experiment_data.py` generates a fixed 1,048,576-row `trips` CSV using seed `30`. Rows are shuffled after generation so the input is unsorted. The predicate is `distance > 900000`; exactly 104,858 rows satisfy it (approximately 10%).
+
+Generate the workload with:
+
+```sh
+python3 scripts/generate_experiment_data.py
+```
+
+The output directory contains `trips.csv`, `experiment.sql`, and `metadata.json`. For each x-axis level, load the CSV with `-DmaxRowsPerPartition=<level>` and run the generated SQL script. Use a fresh `data/` directory for each level because the engine currently stores its catalog and partitions there and applies the partition size during the copy.
+
 # Procedure
 Test data will be generated with a script and a fixed seed. The data will be unsorted.
 We will record the mean across 10 runs for all of the levels excluding a singular warmup run.
 
 # Hypothesis
 We hypothesize that the fraction of read partitions after pruning will increase as the amount of rows per partition increases.
-
-
 
 
 
