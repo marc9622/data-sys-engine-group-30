@@ -9,6 +9,7 @@ import os
 import platform
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import time
@@ -86,25 +87,29 @@ def write_csv(path: Path, rows: list[dict[str, object]], fields: list[str]) -> N
         writer.writerows(rows)
 
 
-def mean_rows(raw_rows: list[dict[str, object]]) -> list[dict[str, object]]:
+def summarize_rows(raw_rows: list[dict[str, object]]) -> list[dict[str, object]]:
     result = []
     for level in sorted({int(row["partition_rows"]) for row in raw_rows}):
         rows = [row for row in raw_rows if int(row["partition_rows"]) == level]
+        elapsed_values = [float(row["elapsed_ms"]) for row in rows]
+        planning_values = [float(row["planning_ms"]) for row in rows]
+        execution_values = [float(row["execution_ms"]) for row in rows]
+        read_fraction_values = [float(row["read_fraction"]) for row in rows]
         result.append(
             {
                 "partition_rows": level,
                 "runs": len(rows),
-                "mean_elapsed_ms": sum(float(row["elapsed_ms"]) for row in rows)
-                / len(rows),
-                "mean_planning_ms": sum(float(row["planning_ms"]) for row in rows)
-                / len(rows),
-                "mean_execution_ms": sum(float(row["execution_ms"]) for row in rows)
-                / len(rows),
+                "mean_elapsed_ms": statistics.mean(elapsed_values),
+                "stddev_elapsed_ms": statistics.pstdev(elapsed_values),
+                "mean_planning_ms": statistics.mean(planning_values),
+                "stddev_planning_ms": statistics.pstdev(planning_values),
+                "mean_execution_ms": statistics.mean(execution_values),
+                "stddev_execution_ms": statistics.pstdev(execution_values),
                 "partitions_total": rows[0]["partitions_total"],
                 "partitions_read": rows[0]["partitions_read"],
                 "partitions_pruned": rows[0]["partitions_pruned"],
-                "mean_read_fraction": sum(float(row["read_fraction"]) for row in rows)
-                / len(rows),
+                "mean_read_fraction": statistics.mean(read_fraction_values),
+                "stddev_read_fraction": statistics.pstdev(read_fraction_values),
             }
         )
     return result
@@ -231,7 +236,7 @@ def main() -> None:
         "partitions_pruned",
         "read_fraction",
     ]
-    means = mean_rows(raw_rows)
+    means = summarize_rows(raw_rows)
     write_csv(output_dir / "raw.csv", raw_rows, raw_fields)
     write_csv(
         output_dir / "means.csv",
@@ -240,12 +245,16 @@ def main() -> None:
             "partition_rows",
             "runs",
             "mean_elapsed_ms",
+            "stddev_elapsed_ms",
             "mean_planning_ms",
+            "stddev_planning_ms",
             "mean_execution_ms",
+            "stddev_execution_ms",
             "partitions_total",
             "partitions_read",
             "partitions_pruned",
             "mean_read_fraction",
+            "stddev_read_fraction",
         ],
     )
     (output_dir / "metadata.json").write_text(
