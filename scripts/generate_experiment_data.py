@@ -17,7 +17,7 @@ DISTANCE_CUTOFF = 900_000
 CITY_NAMES = ("Aalborg", "Aarhus", "Copenhagen", "Esbjerg", "Odense", "Roskilde")
 
 
-def generate(output_dir: Path, rows: int, seed: int) -> None:
+def generate(output_dir: Path, rows: int, seed: int, optional_sort_flag: int | None) -> None:
     if rows <= 0:
         raise ValueError("rows must be positive")
 
@@ -35,7 +35,10 @@ def generate(output_dir: Path, rows: int, seed: int) -> None:
         price = round(10.0 + distance * 0.02 + rng.random() * 100.0, 2)
         records.append((city, distance, price))
 
-    rng.shuffle(records)
+    if optional_sort_flag is not None:
+        records.sort(key=lambda record: record[optional_sort_flag])  # sort by specified column
+    else: 
+        rng.shuffle(records)
 
     csv_path = output_dir / "trips.csv"
     with csv_path.open("w", newline="", encoding="ascii") as csv_file:
@@ -69,8 +72,9 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("data/experiment"))
     parser.add_argument("--rows", type=int, default=DEFAULT_ROWS)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument("--sort", type=int, default=None, help="0=city, 1=distance, 2=price")
     args = parser.parse_args()
-    generate(args.output_dir, args.rows, args.seed)
+    generate(args.output_dir, args.rows, args.seed, args.sort)
 
 
 if __name__ == "__main__":
