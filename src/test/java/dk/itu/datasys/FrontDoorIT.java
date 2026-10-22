@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import static dk.itu.datasys.TestingUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
@@ -19,7 +20,7 @@ class FrontDoorIT {
                 COPY trips FROM '%s';
                 SELECT * FROM trips WHERE city = 'Odense';
                 SELECT city, price FROM trips WHERE city = 'Odense';
-                """.formatted(Utils.resource("trips.csv").toString())); 
+                """.formatted(resource("trips.csv").toString())); 
 
         String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString(); 
         Process process = new ProcessBuilder(

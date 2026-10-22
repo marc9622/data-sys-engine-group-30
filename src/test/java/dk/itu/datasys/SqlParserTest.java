@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import static dk.itu.datasys.TestingUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
@@ -22,7 +23,7 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEquals(Statement.createTable("trips").addColumns(Utils.tripsColumns).statement(), statements.get(index++));
+        assertEquals(Statement.createTable("trips").addColumns(tripsColumns).statement(), statements.get(index++));
         assertEquals(Statement.copy("trips", "trips.csv"), statements.get(index++));
         assertEquals(Statement.select("trips").statement(), statements.get(index++));
         assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
@@ -126,7 +127,7 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEquals(Statement.createTable("trips").addColumns(Utils.tripsColumns).statement(), statements.get(index++));
+        assertEquals(Statement.createTable("trips").addColumns(tripsColumns).statement(), statements.get(index++));
         assertEquals(Statement.copy("trips", "trips.csv"), statements.get(index++));
         assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
 
@@ -191,7 +192,7 @@ class SqlParserTest {
 
         int index = 0;
 
-        assertEquals(Statement.createTable("trips").addColumns(Utils.tripsColumns).statement(), statements.get(index++));
+        assertEquals(Statement.createTable("trips").addColumns(tripsColumns).statement(), statements.get(index++));
         assertEquals(Statement.copy("trips", "trips.csv"), statements.get(index++));
         assertEquals(Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(), statements.get(index++));
 

@@ -130,8 +130,8 @@ This creates a tag that the teaching assistant will check out to validate your p
 - [x] One statement traced end to end in the debugger by every team member.
 - [x] Methods without engine callers deleted and associated tests deleted.
 - [x] `docs/experiment-design.md` merged.
-- [ ] All required tests green in CI; PRs reviewed.
-- [ ] Tag `v0.5` is pushed.
+- [x] All required tests green in CI; PRs reviewed.
+- [x] Tag `v0.5` is pushed.
 - [x] Low-heap runs done and larger-than-memory analysis written (optional).
 
 ## Outlook

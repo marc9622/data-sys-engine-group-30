@@ -8,7 +8,7 @@ import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 
-public class UtilsTest {
+public class TestingUtilsTest {
         @Test
         public void testPowerSetOf() {
             Set<Integer> input = Set.of(1, 2, 3);
@@ -23,7 +23,7 @@ public class UtilsTest {
                 Set.of(1, 2, 3)
             );
 
-            Set<Set<Integer>> actualPowerSet = Utils.Streams.powerSetOf(input).collect(Collectors.toSet());
+            Set<Set<Integer>> actualPowerSet = TestingUtils.Streams.powerSetOf(input).collect(Collectors.toSet());
             assertEquals(expectedPowerSet, actualPowerSet);
         }
 
@@ -39,7 +39,7 @@ public class UtilsTest {
                 List.of(3, 2, 1)
             );
 
-            Set<List<Integer>> actualPermutations = Utils.Streams.permutationsOf(input).collect(Collectors.toSet());
+            Set<List<Integer>> actualPermutations = TestingUtils.Streams.permutationsOf(input).collect(Collectors.toSet());
             assertEquals(expectedPermutations, actualPermutations);
         }
 }
