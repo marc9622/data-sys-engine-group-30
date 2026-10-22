@@ -212,16 +212,16 @@ This creates a tag that the teaching assistant will check out to validate the st
 
 ## Definition of done
 
-- [ ] ANTLR wired into the Maven build; generated sources not committed.
-- [ ] Grammar covers the subset: case-insensitive keywords, optional `WHERE`, comments, negative literals.
-- [ ] `SqlParser.parse` returns `List<Statement>` or throws `SqlParseException` with line and column.
-- [ ] AST records reuse `ColumnSpec`, `ColumnType`, `Comparison` from week 2.
-- [ ] Binder validates against the catalog via the new `schema(...)` accessor.
-- [ ] Pretty-printer with the round-trip property test.
-- [ ] `mvn compile exec:java` prints the pretty-printed AST of the four Task 1 statements.
-- [ ] All required tests green in CI.
-- [ ] All PRs reviewed and merged into main, which is branch-protected.
-- [ ] Tag `v0.3` is pushed.
+- [x] ANTLR wired into the Maven build; generated sources not committed.
+- [x] Grammar covers the subset: case-insensitive keywords, optional `WHERE`, comments, negative literals.
+- [x] `SqlParser.parse` returns `List<Statement>` or throws `SqlParseException` with line and column.
+- [x] AST records reuse `ColumnSpec`, `ColumnType`, `Comparison` from week 2.
+- [x] Binder validates against the catalog via the new `schema(...)` accessor.
+- [x] Pretty-printer with the round-trip property test.
+- [x] `mvn compile exec:java` prints the pretty-printed AST of the four Task 1 statements.
+- [x] All required tests green in CI.
+- [x] All PRs reviewed and merged into main, which is branch-protected.
+- [x] Tag `v0.3` is pushed.
 
 ## Outlook
 

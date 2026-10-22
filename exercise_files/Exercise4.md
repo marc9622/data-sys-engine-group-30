@@ -94,13 +94,13 @@ This creates a tag that the teaching assistant will check out to validate the st
 
 ## Definition of done
 
-- [ ] `select` runs on `Scan` → `Filter`; the Exercise 2 integration tests untouched and green.
-- [ ] Pruning done by the planner, before any data file is read; `Scan` takes a partition list and no predicate; `ScanStats` and the `decision=` log lines intact; `rowsIn`/`rowsOut` from `Filter`.
-- [ ] `parse → bind → plan → execute` wired; front door prints CSV on stdout, errors on stderr; `data/` in `.gitignore`.
-- [ ] `statementNumber` counted per statement from 1, and 0 outside statements.
-- [ ] All required tests green in CI.
-- [ ] PRs reviewed.
-- [ ] Tag `v0.4` is pushed.
+- [x] `select` runs on `Scan` → `Filter`; the Exercise 2 integration tests untouched and green.
+- [x] Pruning done by the planner, before any data file is read; `Scan` takes a partition list and no predicate; `ScanStats` and the `decision=` log lines intact; `rowsIn`/`rowsOut` from `Filter`.
+- [x] `parse → bind → plan → execute` wired; front door prints CSV on stdout, errors on stderr; `data/` in `.gitignore`.
+- [x] `statementNumber` counted per statement from 1, and 0 outside statements.
+- [x] All required tests green in CI.
+- [x] PRs reviewed.
+- [x] Tag `v0.4` is pushed.
 
 ## Outlook
 
