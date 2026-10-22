@@ -1,5 +1,7 @@
 package dk.itu.datasys;
 
+import static dk.itu.datasys.Statement.*;
+import static dk.itu.datasys.TestingUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -11,7 +13,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.Select;
-import static dk.itu.datasys.Statement.*;
 import dk.itu.datasys.ops.FilterOperator;
 import dk.itu.datasys.ops.ScanOperator;
 
@@ -31,7 +32,7 @@ class PlannerTest {
     void whereProducesFilterOverScan(@TempDir Path tmp) {
         StorageEngine engine = new StorageEngine(tmp);
         engine.createTable("trips", COLUMNS);
-        engine.copyFromCsvFile("trips", Utils.resource("trips_sorted.csv").toString());
+        engine.copyFromCsvFile("trips", resource("trips_sorted.csv").toString());
         Planner planner = new Planner(engine);
         Select select = select("trips").where("distance", Comparison.EQUALS, 95L).statement();
 
@@ -45,7 +46,7 @@ class PlannerTest {
     void noWhereProducesScanOverAllPartitions(@TempDir Path tmp) {
         StorageEngine engine = new StorageEngine(tmp);
         engine.createTable("trips", COLUMNS);
-        engine.copyFromCsvFile("trips", Utils.resource("trips_sorted.csv").toString());
+        engine.copyFromCsvFile("trips", resource("trips_sorted.csv").toString());
         Planner planner = new Planner(engine);
 
         Plan plan = planner.plan(select("trips").statement());

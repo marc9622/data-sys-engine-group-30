@@ -16,8 +16,8 @@ import java.util.stream.Stream;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.ParseCsvLineResult;
 
-public final class Utils {
-    private Utils() {}
+public final class TestingUtils {
+    private TestingUtils() {}
 
     public static final String tripsName = "trips";
 

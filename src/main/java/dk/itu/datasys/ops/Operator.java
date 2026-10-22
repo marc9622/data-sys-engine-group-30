@@ -33,10 +33,13 @@ public interface Operator {
 
     default List<Object[]> exhaust() {
         List<Object[]> rows = new ArrayList<>();
-        Object[] row;
-        while ((row = next()) != null)
-            rows.add(row);
+        exhaust(rows);
         return rows;
+    }
+
+    default void exhaust(List<Object[]> rows) {
+        for (Object[] row; (row = next()) != null;)
+            rows.add(row);
     }
 
     public static abstract class RowWiseIntermediate implements Operator {

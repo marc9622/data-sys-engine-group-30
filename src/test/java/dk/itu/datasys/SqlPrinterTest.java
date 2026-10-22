@@ -1,6 +1,7 @@
 package dk.itu.datasys;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static dk.itu.datasys.TestingUtils.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 
@@ -12,7 +13,7 @@ class SqlPrinterTest {
 
     @Test
     void prettyPrintsEveryStatementShape() {
-        Statement create = Statement.createTable("trips").addColumns(Utils.tripsColumns).statement();
+        Statement create = Statement.createTable("trips").addColumns(tripsColumns).statement();
 
         Statement copy = Statement.copy("trips", "trips.csv");
 
@@ -38,7 +39,7 @@ class SqlPrinterTest {
         SqlPrinter printer = new SqlPrinter();
 
         List<Statement> statements = List.of(
-                Statement.createTable("trips").addColumns(Utils.tripsColumns).statement(),
+                Statement.createTable("trips").addColumns(tripsColumns).statement(),
                 Statement.copy("trips", "trips.csv"),
                 Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(),
                 Statement.select("trips").columns("city", "price").statement());

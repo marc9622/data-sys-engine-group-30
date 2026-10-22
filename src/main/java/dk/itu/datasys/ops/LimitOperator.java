@@ -16,8 +16,10 @@ public final class LimitOperator extends Operator.RowWiseIntermediate {
     public LimitOperator(Operator child, int rowsMax) {
         super(child);
         this.rowsMax = rowsMax;
-        if (rowsMax < 0)
+        if (rowsMax < 0) {
+            LOGGER.error("limit not non-negative rowsMax={}", rowsMax);
             throw new IllegalArgumentException("rowsMax must be non-negative");
+        }
     }
 
     @Override

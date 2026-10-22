@@ -42,9 +42,8 @@ public final class ScanOperator implements Operator {
     @Override
     public Object[] next() {
         while (!rows.hasNext()) {
-            if (nextPartitionIndex >= partitions.size()) {
+            if (nextPartitionIndex >= partitions.size())
                 return null;
-            }
 
             StorageEngine.PartitionMeta partition = partitions.get(nextPartitionIndex++);
 

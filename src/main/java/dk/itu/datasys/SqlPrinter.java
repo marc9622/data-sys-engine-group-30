@@ -3,9 +3,7 @@ package dk.itu.datasys;
 import java.math.BigDecimal;
 import java.util.Objects;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Spec.Comparison;
+import dk.itu.datasys.Spec.*;
 
 public final class SqlPrinter {
     public String print(Statement statement) {
