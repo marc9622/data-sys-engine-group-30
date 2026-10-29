@@ -3,7 +3,7 @@
 target/
 logs/
 data/
-results/
+results/experiment/runs
 .classpath
 .factorypath
 .project
