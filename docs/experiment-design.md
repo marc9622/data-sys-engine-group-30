@@ -1,8 +1,10 @@
 # Factors and levels:
-The experiment will have two factors; maximum number of rows per partition (x axis) and the fraction of partitions read after pruning (y axis). The fraction of partitions read after pruning will be measured as; partitions read / (partitions read + partitions pruned). The x axis will have 10 levels: 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024.
+
+The experiment will have two factors; maximum number of rows per partition (x axis) and the fraction of partitions read after pruning (y axis). The fraction of partitions read after pruning will be measured as; partitions read / (partitions read + partitions pruned). The x axis will have 10 levels: 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096.
 
 # Workload
-`scripts/generate_experiment_data.py` generates a 32,768-row `trips` CSV by
+
+`scripts/generate_experiment_data.py` generates a 65,536-row `trips` CSV by
 default, using seed `30`. Rows are shuffled after generation so the input is
 unsorted. The predicate is `distance > 900000`, and approximately 10% of rows
 satisfy it.
@@ -36,6 +38,7 @@ temporary data directory for each run because the engine stores its catalog
 and partitions there.
 
 # Procedure
+
 Test data will be generated with a script and a fixed seed. The data will be unsorted.
 We will record the mean and population standard deviation across 10 measured
 runs for all of the levels, excluding a singular warmup run.
@@ -75,7 +78,6 @@ from running that workload.
   commit, operating system, Java/Python versions, warmup count, measured run
   count, and tested partition-size levels.
 
-
 The elapsed time reported for each run is the sum of the `SELECT` planning and
 execution times. It excludes process startup, SQL parsing, `CREATE TABLE`, CSV
 loading, partition creation, and process shutdown. The raw results also record
@@ -89,4 +91,5 @@ python3 scripts/run_experiment.py --runs 2 --levels 2 16 --skip-build
 ```
 
 # Hypothesis
+
 We hypothesize that the fraction of read partitions after pruning will increase as the amount of rows per partition increases.

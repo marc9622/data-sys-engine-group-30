@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 
-DEFAULT_LEVELS = (2, 4, 8, 16, 32, 64, 128, 256, 512, 1024)
+DEFAULT_LEVELS = (2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096)
 DECISION_RE = re.compile(r"decision=(READ|PRUNED)")
 SELECT_TIMING_RE = re.compile(
     r"select planningMs=(?P<planning_ms>[0-9.]+) "

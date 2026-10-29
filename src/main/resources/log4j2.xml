@@ -5,7 +5,7 @@
     <RollingFile name="CsvLog" fileName="logs/engine.log"
                  filePattern="logs/engine-%i.log">
       <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS},%X{sessionId},%X{statementNumber},%tid,%level,%logger{1},%m%n"/>
-      <SizeBasedTriggeringPolicy size="15 MB"/>
+      <SizeBasedTriggeringPolicy size="30 MB"/>
       <DefaultRolloverStrategy max="1000"/>
     </RollingFile>
     <!-- Console copy for debugging; stderr keeps stdout clean for program output -->
