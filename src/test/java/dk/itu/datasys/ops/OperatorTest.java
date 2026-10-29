@@ -17,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.Select.Predicate;
 import dk.itu.datasys.StorageEngine;
+import dk.itu.datasys.StorageEngine.Catalog;
 
 class OperatorTest {
 
@@ -33,14 +34,15 @@ class OperatorTest {
     @Test
     void scanOperatorReturnsRowsFromSelectedPartitions(@TempDir Path tempDir) {
         StorageEngine engine = createPartitionedEngine(tempDir);
+        Catalog catalog = engine.viewCatalogForTesting();
 
-        List<StorageEngine.PartitionMeta> partitions = engine.partitions(tripsName);
+        List<StorageEngine.PartitionMeta> partitions = engine.partitions(catalog, tripsName);
         List<StorageEngine.PartitionMeta> selectedPartitions = partitions.subList(1, 3);
 
         // Choose rows 2,3,4,5 for assertion(rows in partiotion 1 and 2) 
         List<Object[]> selectedRows = tripsRows.subList(2, 6);
 
-        ScanOperator scanOp = new ScanOperator(engine, tripsName, selectedPartitions);
+        ScanOperator scanOp = new ScanOperator(engine, catalog, tripsName, selectedPartitions);
         AssertOperator assertOp = new AssertOperator(scanOp, selectedRows);
 
         assertOp.openExhaustCloseAndGetSchema();
@@ -49,8 +51,9 @@ class OperatorTest {
     @Test
     void scanOperatorReturnsNoRowsForEmptyPartitionList(@TempDir Path tempDir) {
         StorageEngine engine = createPartitionedEngine(tempDir);
+        Catalog catalog = engine.viewCatalogForTesting();
 
-        ScanOperator scanOp = new ScanOperator(engine, tripsName, List.of());
+        ScanOperator scanOp = new ScanOperator(engine, catalog, tripsName, List.of());
         AssertOperator assertOp = new AssertOperator(scanOp, List.of());
 
         assertOp.openExhaustCloseAndGetSchema();
@@ -59,7 +62,7 @@ class OperatorTest {
     @Test
     void scanOperatorReturnsTableSchema(@TempDir Path tempDir) {
         StorageEngine engine = createPartitionedEngine(tempDir);
-        ScanOperator scanOp = new ScanOperator(engine, tripsName, List.of());
+        ScanOperator scanOp = new ScanOperator(engine, engine.viewCatalogForTesting(), tripsName, List.of());
 
         assertEquals(tripsColumns, scanOp.schema());
     }
@@ -71,8 +74,8 @@ class OperatorTest {
 
         try {
             StorageEngine engine = new StorageEngine(tempDir);
-            engine.createTable(tripsName, tripsColumns);
-            engine.copyFromCsvFile(tripsName, resource("trips.csv").toString());
+            createTableWithCatalog(engine, tripsName, tripsColumns);
+            copyFromCsvFileWithCatalog(engine, tripsName, resource("trips.csv"));
             return engine;
         } finally {
             if (previousMaxRowsPerPartition == null)

@@ -32,6 +32,32 @@ public final class TestingUtils {
         return Path.of("src/test/resources/" + name).toAbsolutePath();
     }
 
+    public static void createTableWithCatalog(StorageEngine engine, String tableName, List<ColumnSpec> columns) {
+        runWithCatalog(engine, (catalog) -> engine.createTable(catalog, tableName, columns));
+    }
+
+    public static void copyFromCsvFileWithCatalog(StorageEngine engine, String tableName, Path csvFilePath) {
+        runWithCatalog(engine, (catalog) -> engine.copyFromCsvFile(catalog, tableName, csvFilePath));
+    }
+
+    @FunctionalInterface
+    public interface RunnableWithCatalog {
+        void run(StorageEngine.Catalog catalog) throws Exception;
+    }
+
+    public static void runWithCatalog(StorageEngine engine, RunnableWithCatalog runnable) {
+        StorageEngine.Catalog catalog = engine.openCatalog();
+        try {
+            runnable.run(catalog);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            engine.closeCatalog(catalog);
+        }
+    }
+
     public static List<Object[]> parseCsvFile(Path path) {
         List<Object[]> rows = new ArrayList<>();
 
@@ -41,7 +67,7 @@ public final class TestingUtils {
                 Object[] parsed = switch (StorageEngine.parseCsvLine(line, tripsColumns)) {
                     case ParseCsvLineResult.Success(Object[] row) -> row;
                     case ParseCsvLineResult.Malformed m ->
-                        throw m.toRuntimeException(path.toString(), rows.size());
+                        throw m.toRuntimeException(path, rows.size());
                 };
 
                 rows.add(parsed);

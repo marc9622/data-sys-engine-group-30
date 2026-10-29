@@ -32,7 +32,8 @@ class FrontDoorIT {
             .start();
 
         int exitCode = process.waitFor();
-        assertEquals(0, exitCode);
+        if (exitCode != 0)
+            throw new AssertionError("Process exited with code " + exitCode + ", stderr: " + new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8));
 
         String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String[] lines = stdout.split(System.lineSeparator());

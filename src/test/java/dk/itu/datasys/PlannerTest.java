@@ -31,12 +31,12 @@ class PlannerTest {
     @Test
     void whereProducesFilterOverScan(@TempDir Path tmp) {
         StorageEngine engine = new StorageEngine(tmp);
-        engine.createTable("trips", COLUMNS);
-        engine.copyFromCsvFile("trips", resource("trips_sorted.csv").toString());
+        createTableWithCatalog(engine, "trips", COLUMNS);
+        copyFromCsvFileWithCatalog(engine, "trips", resource("trips_sorted.csv"));
         Planner planner = new Planner(engine);
         Select select = select("trips").where("distance", Comparison.EQUALS, 95L).statement();
 
-        Plan plan = planner.plan(select);
+        Plan plan = planner.plan(engine.openCatalog(), select);
 
         assertInstanceOf(FilterOperator.class, plan.root());
         assertEquals(new StorageEngine.ScanStats(4, 1, 3), plan.scanStats());
@@ -45,11 +45,11 @@ class PlannerTest {
     @Test
     void noWhereProducesScanOverAllPartitions(@TempDir Path tmp) {
         StorageEngine engine = new StorageEngine(tmp);
-        engine.createTable("trips", COLUMNS);
-        engine.copyFromCsvFile("trips", resource("trips_sorted.csv").toString());
+        createTableWithCatalog(engine, "trips", COLUMNS);
+        copyFromCsvFileWithCatalog(engine, "trips", resource("trips_sorted.csv"));
         Planner planner = new Planner(engine);
 
-        Plan plan = planner.plan(select("trips").statement());
+        Plan plan = planner.plan(engine.openCatalog(), select("trips").statement());
 
         assertInstanceOf(ScanOperator.class, plan.root());
         assertEquals(new StorageEngine.ScanStats(4, 4, 0), plan.scanStats());

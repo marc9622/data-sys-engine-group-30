@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import static dk.itu.datasys.TestingUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.DataInputStream;
@@ -35,7 +36,7 @@ class StorageEngineUnitTest {
     }
 
     @Test
-    void minMaxComputationAndPruning(@TempDir Path tmp) {
+    void minMaxComputationAndPruning(@TempDir Path tmp) throws Exception {
         StorageEngine eng = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG));
 
@@ -43,8 +44,8 @@ class StorageEngineUnitTest {
         Object[] row2 = new Object[] {"B", 20L};
         Object[] row3 = new Object[] {"C", 5L};
 
-        eng.createTable("t", cols);
-        StorageEngine.TableMeta tm = eng.catalogForTest().tables.get("t");
+        createTableWithCatalog(eng, "t", cols);
+        StorageEngine.TableMeta tm = eng.viewCatalogForTesting().tables.get("t");
 
         // write partition
         eng.writePartition("t", tm, List.of(row1, row2, row3), 0);

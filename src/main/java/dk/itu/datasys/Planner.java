@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Statement.Select;
+import dk.itu.datasys.StorageEngine.Catalog;
 import dk.itu.datasys.ops.FilterOperator;
 import dk.itu.datasys.ops.LimitOperator;
 import dk.itu.datasys.ops.Operator;
@@ -25,11 +26,11 @@ public final class Planner {
         this.engine = Objects.requireNonNull(engine, "engine");
     }
 
-    public Plan plan(Select select) {
+    public Plan plan(Catalog catalog, Select select) {
         Objects.requireNonNull(select, "select");
 
         String tableName = select.tableName();
-        List<StorageEngine.PartitionMeta> allPartitions = engine.partitions(tableName);
+        List<StorageEngine.PartitionMeta> allPartitions = engine.partitions(catalog, tableName);
         List<StorageEngine.PartitionMeta> survivingPartitions = new ArrayList<>();
 
         if (select.where().isEmpty()) {
@@ -39,7 +40,7 @@ public final class Planner {
         }
         else {
             Select.Predicate predicate = select.where().get();
-            List<ColumnSpec> schema = engine.schema(tableName);
+            List<ColumnSpec> schema = engine.schema(catalog, tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
             ColumnType columnType = schema.get(columnIndex).type();
 
@@ -62,11 +63,11 @@ public final class Planner {
             }
         }
 
-        Operator root = new ScanOperator(engine, tableName, survivingPartitions);
+        Operator root = new ScanOperator(engine, catalog, tableName, survivingPartitions);
 
         if (select.where().isPresent()) {
             Select.Predicate predicate = select.where().get();
-            List<ColumnSpec> schema = engine.schema(tableName);
+            List<ColumnSpec> schema = engine.schema(catalog, tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
             root = new FilterOperator(root, predicate, columnIndex);
 

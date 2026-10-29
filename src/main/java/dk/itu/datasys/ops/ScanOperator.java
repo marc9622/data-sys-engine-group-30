@@ -10,26 +10,29 @@ import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.StorageEngine;
+import dk.itu.datasys.StorageEngine.Catalog;
 
 public final class ScanOperator implements Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(ScanOperator.class);
 
     private final StorageEngine engine;
+    private final Catalog catalog;
     private final String tableName;
     private final List<StorageEngine.PartitionMeta> partitions;
     private int nextPartitionIndex;
     private int rowsOut;
     private Iterator<Object[]> rows;
 
-    public ScanOperator(StorageEngine engine, String tableName, List<StorageEngine.PartitionMeta> partitions) {
+    public ScanOperator(StorageEngine engine, Catalog catalog, String tableName, List<StorageEngine.PartitionMeta> partitions) {
         this.engine = Objects.requireNonNull(engine);
+        this.catalog = catalog;
         this.tableName = Objects.requireNonNull(tableName);
         this.partitions = List.copyOf(partitions);
     }
 
     @Override
     public List<ColumnSpec> schema() {
-        return engine.schema(tableName);
+        return engine.schema(catalog, tableName);
     }
 
     @Override
@@ -47,7 +50,7 @@ public final class ScanOperator implements Operator {
 
             StorageEngine.PartitionMeta partition = partitions.get(nextPartitionIndex++);
 
-            rows = engine.readPartitionRows(tableName, partition).iterator();
+            rows = engine.readPartitionRows(catalog, tableName, partition).iterator();
         }
 
         return rows.next();
