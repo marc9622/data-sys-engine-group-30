@@ -1,3 +1,4 @@
+
 # Factors and levels:
 
 The experiment will have two factors; maximum number of rows per partition (x axis) and the fraction of partitions read after pruning (y axis). The fraction of partitions read after pruning will be measured as; partitions read / (partitions read + partitions pruned). The x axis will have 10 levels: 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096.

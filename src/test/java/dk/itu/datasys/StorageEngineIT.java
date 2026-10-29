@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import static dk.itu.datasys.TestingUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -16,7 +17,7 @@ class StorageEngineIT {
     @Test
     void schemaPersistenceAndDuplicate(@TempDir Path tmp) {
         StorageEngine e1 = new StorageEngine(tmp);
-        List<ColumnSpec> cols = Utils.tripsColumns.subList(0, 1);
+        List<ColumnSpec> cols = tripsColumns.subList(0, 1);
         e1.createTable("t", cols);
 
         // new engine should see table and reject duplicate create
@@ -28,9 +29,9 @@ class StorageEngineIT {
     void roundTripAndTypes(@TempDir Path tmp) {
         System.setProperty("maxRowsPerPartition", "2");
         StorageEngine e = new StorageEngine(tmp);
-        List<ColumnSpec> cols = Utils.tripsColumns;
+        List<ColumnSpec> cols = tripsColumns;
         e.createTable("trips", cols);
-        Path csv = Utils.resource("trips.csv");
+        Path csv = resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
 
         List<Object[]> all = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
@@ -46,9 +47,9 @@ class StorageEngineIT {
     void comparisonsAllTypes(@TempDir Path tmp) {
         System.setProperty("maxRowsPerPartition", "2");
         StorageEngine e = new StorageEngine(tmp);
-        List<ColumnSpec> cols = Utils.tripsColumns;
+        List<ColumnSpec> cols = tripsColumns;
         e.createTable("trips", cols);
-        Path csv = Utils.resource("trips.csv");
+        Path csv = resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
 
         Executor ex = new Executor(e);
@@ -69,21 +70,21 @@ class StorageEngineIT {
     @Test
     void projectionSelect(@TempDir Path tmp) {
         StorageEngine e = new StorageEngine(tmp);
-        List<ColumnSpec> sourceColumns = Utils.tripsColumns;
-        e.createTable(Utils.tripsName, sourceColumns);
-        Path csv = Utils.resource("trips.csv");
-        e.copyFromCsvFile(Utils.tripsName, csv.toString());
+        List<ColumnSpec> sourceColumns = tripsColumns;
+        e.createTable(tripsName, sourceColumns);
+        Path csv = resource("trips.csv");
+        e.copyFromCsvFile(tripsName, csv.toString());
 
-        Object[] testedRow = Utils.tripsRows
+        Object[] testedRow = tripsRows
             .stream()
             .filter(row -> row[0].equals("Odense"))
             .findAny()
             .get();
 
-        List<List<Integer>> mappings = Utils.Streams
+        List<List<Integer>> mappings = Streams
             .powerSetOf(IntStream.range(0, sourceColumns.size()).boxed().toList())
             .filter(set -> !set.isEmpty())
-            .flatMap(subset -> Utils.Streams.permutationsOf(subset))
+            .flatMap(subset -> Streams.permutationsOf(subset))
             .toList();
 
         Executor ex = new Executor(e);
@@ -94,7 +95,7 @@ class StorageEngineIT {
 
             List<Object[]> rows = ex.executeScript(
                     "SELECT " + projectionString +
-                    " FROM " + Utils.tripsName +
+                    " FROM " + tripsName +
                     " WHERE city = 'Odense';"
                     ).get(0);
             assertEquals(1, rows.size());
@@ -106,11 +107,32 @@ class StorageEngineIT {
     }
 
     @Test
+    void limitedSelect(@TempDir Path tmp) {
+        StorageEngine e = new StorageEngine(tmp);
+        List<ColumnSpec> cols = tripsColumns;
+        e.createTable("trips", cols);
+        Path csv = resource("trips.csv");
+        e.copyFromCsvFile("trips", csv.toString());
+
+        Executor ex = new Executor(e);
+
+        for (int limit : List.of(0, 5, 10)) {
+            List<Object[]> actualRows = ex.executeScript("SELECT * FROM trips WHERE distance > 20 LIMIT " + limit + ";").get(0);
+            List<Object[]> expectedRows = tripsRows.stream().filter(r -> (Long) r[1] > 20).limit(limit).toList();
+
+            assertEquals(expectedRows.size(), actualRows.size());
+            for (int i = 0; i < expectedRows.size(); i++) {
+                assertArrayEquals(expectedRows.get(i), actualRows.get(i));
+            }
+        }
+    }
+
+    @Test
     void emptyResultAndErrors(@TempDir Path tmp) {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("t", cols);
-        Path csv = Utils.resource("trips.csv");
+        Path csv = resource("trips.csv");
         e.copyFromCsvFile("t", csv.toString());
 
         List<Object[]> none = new Executor(e).executeScript("SELECT * FROM t WHERE distance > 1000;").get(0);
@@ -130,7 +152,7 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
         e.createTable("trips", cols);
-        Path csv = Utils.resource("trips.csv");
+        Path csv = resource("trips.csv");
         e.copyFromCsvFile("trips", csv.toString());
 
         StorageEngine.TableMeta tm = e.catalogForTest().tables.get("trips");
@@ -157,7 +179,7 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
 
         e.createTable("trips", cols);
-        e.copyFromCsvFile("trips", Utils.resource("trips_sorted.csv").toString());
+        e.copyFromCsvFile("trips", resource("trips_sorted.csv").toString());
 
         List<Object[]> res = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > 200;").get(0);
         assertEquals(2, res.size());
@@ -174,7 +196,7 @@ class StorageEngineIT {
         StorageEngine e1 = new StorageEngine(tmp);
 
         e1.createTable("trips", cols);
-        e1.copyFromCsvFile("trips", Utils.resource("trips.csv").toString());
+        e1.copyFromCsvFile("trips", resource("trips.csv").toString());
 
         StorageEngine.Catalog c1 = e1.catalogForTest();
 

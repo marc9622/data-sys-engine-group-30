@@ -25,9 +25,10 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
                 .map(column -> (ColumnSpec) visit(column))
                 .toList();
 
-        return new Statement.CreateTable(
-                context.IDENTIFIER().getText(),
-                columns);
+        return Statement
+            .createTable(context.IDENTIFIER().getText())
+            .addColumns(columns)
+            .statement();
     }
 
     // Converts one column definition into a ColumnSpec.
@@ -53,7 +54,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
     // Builds a COPY node and removes quotes from the file path.
     @Override
     public Object visitCopy(SqlParser.CopyContext context) {
-        return new Statement.Copy(
+        return Statement.copy(
                 context.IDENTIFIER().getText(),
                 unquote(context.STRING_LITERAL().getText()));
     }
@@ -70,7 +71,16 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
                 ? Optional.empty()
                 : Optional.of((Statement.Select.Predicate) visit(context.predicate()));
 
-        return new Statement.Select(columnList, context.IDENTIFIER().getText(), predicate);
+        Optional<Integer> limit = Optional
+            .ofNullable(context.limit())
+            .map(t -> Integer.valueOf(t.getText()));
+
+        return Statement
+            .select(context.IDENTIFIER().getText())
+            .columns(columnList)
+            .where(predicate)
+            .limit(limit)
+            .statement();
     }
 
     // Builds the projection column list.

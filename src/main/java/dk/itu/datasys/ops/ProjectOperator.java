@@ -3,9 +3,14 @@ package dk.itu.datasys.ops;
 import java.util.List;
 import java.util.stream.IntStream;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import dk.itu.datasys.Spec.ColumnSpec;
 
 public final class ProjectOperator extends Operator.RowWiseIntermediate {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProjectOperator.class);
+
     private final List<String> columns;
 
     private int[] mapping;
@@ -28,6 +33,7 @@ public final class ProjectOperator extends Operator.RowWiseIntermediate {
                 if (srcColumnNames.get(sourceColumnIndex).equals(column))
                     return sourceColumnIndex;
             }
+            LOGGER.error("invalid column name column={} sourceColumns=[{}]", column, String.join(" ", srcColumnNames));
             throw new IllegalArgumentException("Column " + column + " not found in source schema");
         }).toArray();
 

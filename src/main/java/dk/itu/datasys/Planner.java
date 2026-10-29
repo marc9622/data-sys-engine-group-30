@@ -11,6 +11,7 @@ import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.Statement.Select;
 import dk.itu.datasys.ops.FilterOperator;
+import dk.itu.datasys.ops.LimitOperator;
 import dk.itu.datasys.ops.Operator;
 import dk.itu.datasys.ops.ProjectOperator;
 import dk.itu.datasys.ops.ScanOperator;
@@ -33,7 +34,10 @@ public final class Planner {
 
         if (select.where().isEmpty()) {
             survivingPartitions.addAll(allPartitions);
-        } else {
+
+            LOGGER.debug("table={} no-where partitions={} decision=READ", tableName, survivingPartitions.size());
+        }
+        else {
             Select.Predicate predicate = select.where().get();
             List<ColumnSpec> schema = engine.schema(tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
@@ -65,15 +69,29 @@ public final class Planner {
             List<ColumnSpec> schema = engine.schema(tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
             root = new FilterOperator(root, predicate, columnIndex);
+
+            LOGGER.debug("added filter operation where={}", predicate);
         }
 
         if (!select.columns().isEmpty()) {
             root = new ProjectOperator(root, select.columns());
+
+            LOGGER.debug("added projection operation columns=[{}]", String.join(" ", select.columns()));
+        }
+
+        if (select.limit().isPresent()) {
+            root = new LimitOperator(root, select.limit().get());
+
+            LOGGER.debug("added limit operation limit={}", select.limit().get());
         }
 
         int total = allPartitions.size();
         StorageEngine.ScanStats stats = new StorageEngine.ScanStats(
                 total, survivingPartitions.size(), total - survivingPartitions.size());
+
+        LOGGER.debug("created plan table={} totalPartitions={} survivingPartitions={} prunedPartitions={}",
+                tableName, stats.partitionsTotal(), stats.partitionsRead(), stats.partitionsPruned());
+
         return new Plan(root, stats);
     }
 

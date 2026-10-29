@@ -34,9 +34,12 @@ public final class Executor {
         try {
             List<List<Object[]>> results = new ArrayList<>(); 
 
-            List<Statement> statements = parser.parse(sqlText);
-            for (int statementNumber = 0; statementNumber < statements.size(); statementNumber++){
+            List<Statement> statements = Utils.logExceptions(LOGGER, "failed to parse query", () ->
+                    parser.parse(sqlText));
+
+            for (int statementNumber = 0; statementNumber < statements.size(); statementNumber++) {
                 Statement statement = statements.get(statementNumber);
+
                 MDC.put("statementNumber", String.valueOf(statementNumber + 1));
                 LOGGER.debug("executing statement={}", statement);
 
@@ -53,41 +56,60 @@ public final class Executor {
     /** Executes one already parsed statement. */
     public List<Object[]> executeStatement(Statement statement) {
         Objects.requireNonNull(statement, "statement");
-        binder.bind(statement);
+
+        Utils.logExceptions(LOGGER, "failed to bind statement", () ->
+            binder.bind(statement));
 
         return switch (statement) {
-            case Statement.CreateTable create -> {
-                engine.createTable(create.tableName(), create.columns());
-                yield List.of();
-            }
-            case Statement.Copy copy -> {
-                engine.copyFromCsvFile(copy.tableName(), copy.csvFilePath());
-                yield List.of();
-            }
-            case Statement.Select select -> executeSelect(select);
+            case Statement.CreateTable create ->
+                Utils.logExceptions(LOGGER, "failed to create table", () -> {
+                    engine.createTable(create.tableName(), create.columns());
+                    return List.of();
+                });
+            case Statement.Copy copy ->
+                Utils.logExceptions(LOGGER, "failed to copy csv file", () -> {
+                    engine.copyFromCsvFile(copy.tableName(), copy.csvFilePath());
+                    return List.of();
+                });
+            case Statement.Select select ->
+                Utils.logExceptions(LOGGER, "failed to execute query", () ->
+                    executeSelect(select));
         };
     }
 
     public List<Object[]> executeSelect(Statement.Select select) {
         long planningStart = System.nanoTime();
-        Plan plan = planner.plan(select);
+        long startMs = System.currentTimeMillis();
+
+        Plan plan = Utils.logExceptions(LOGGER, "failed to make plan", () ->
+            planner.plan(select));
+
         double planningMs = (System.nanoTime() - planningStart) / 1_000_000.0;
         engine.setLastScanStats(plan.scanStats());
 
         Operator root = plan.root();
         List<Object[]> rows = new ArrayList<>();
         long executionStart = System.nanoTime();
-        root.open();
+
+        Utils.logExceptions(LOGGER, "failed to open operations", () ->
+            root.open());
+
         try {
-            Object[] row;
-            while ((row = root.next()) != null)
-                rows.add(row);
+            Utils.logExceptions(LOGGER, "failed to get rows from operations", () -> {
+                root.exhaust(rows);
+            });
         } finally {
-            root.close();
+            Utils.logExceptions(LOGGER, "failed to close operations", () ->
+                root.close());
         }
+
+        long durationMs = System.currentTimeMillis() - startMs;
+        LOGGER.debug("query complete rows={} durationMs={}", rows.size(), durationMs);
+
         double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
                 planningMs, executionMs, planningMs + executionMs);
         return rows;
     }
+
 }
