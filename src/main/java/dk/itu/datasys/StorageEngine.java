@@ -67,6 +67,23 @@ public final class StorageEngine {
     }
 
     /**
+     * Deletes all data files and the catalog file in the given data directory. This is useful for playing with the engine in a test environment.
+     * @param dataDir the directory where all persistent state (catalog + data files) lives under
+     */
+    public static void deleteAllData(Path dataDir) {
+        requireNonNull(dataDir, "dataDir");
+
+        try {
+            Files.walk(dataDir)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+        } catch (IOException e) {
+            throw new RuntimeException("failed to delete data dir: " + dataDir, e);
+        }
+    }
+
+    /**
      * Ensures that the catalog contains a table with the given name and columns.
      * @param tableName the name of the table to create
      * @param columns the list of columns for the table
