@@ -78,15 +78,18 @@ public final class Executor {
     }
 
     public List<Object[]> executeSelect(Statement.Select select) {
+        long planningStart = System.nanoTime();
         long startMs = System.currentTimeMillis();
 
         Plan plan = Utils.logExceptions(LOGGER, "failed to make plan", () ->
             planner.plan(select));
 
+        double planningMs = (System.nanoTime() - planningStart) / 1_000_000.0;
         engine.setLastScanStats(plan.scanStats());
 
         Operator root = plan.root();
         List<Object[]> rows = new ArrayList<>();
+        long executionStart = System.nanoTime();
 
         Utils.logExceptions(LOGGER, "failed to open operations", () ->
             root.open());
@@ -103,6 +106,9 @@ public final class Executor {
         long durationMs = System.currentTimeMillis() - startMs;
         LOGGER.debug("query complete rows={} durationMs={}", rows.size(), durationMs);
 
+        double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
+        LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
+                planningMs, executionMs, planningMs + executionMs);
         return rows;
     }
 
