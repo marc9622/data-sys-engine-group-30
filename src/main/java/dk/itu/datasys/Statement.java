@@ -7,7 +7,7 @@ import java.util.Optional;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.*;
 
-public sealed interface Statement permits CreateTable, Copy, Select {
+public sealed interface Statement permits CreateTable, Copy, Select, Delete {
     public static record CreateTable(String tableName, List<ColumnSpec> columns) implements Statement {
         @Override
         public String toString() {
@@ -119,6 +119,66 @@ public sealed interface Statement permits CreateTable, Copy, Select {
                 return new Select(List.copyOf(columns), tableName, where, limit);
             }
         }
+    }
+
+    public static record Delete(List<String> columns, String tableName, Optional<Predicate> where) implements Statement {
+        public Delete(String tableName, Optional<Predicate> where) {
+            this(List.of(), tableName, where);
+        }
+
+        @Override
+        public String toString() {
+            return "Delete[columns=" + columns + " tableName=" + tableName + " where=" + where + "]";
+        }
+
+        public static record Predicate(String columnName, Comparison comparison, Object constant) {
+            public boolean matches(Object value, ColumnType type) {
+                return comparison.matches(value, constant, type);
+            }
+
+            @Override
+            public String toString() {
+                return "Predicate[columnName=" + columnName + " comparison=" + comparison + " constant=" + constant + "]";
+            }
+        }
+
+        public static class DeleteBuilder {
+            private final String tableName;
+            private final List<String> columns = new ArrayList<>();
+            private Optional<Predicate> where = Optional.empty();
+
+            public DeleteBuilder(String tableName) {
+                this.tableName = tableName;
+            }
+
+            public DeleteBuilder columns(List<String> columns) {
+                this.columns.addAll(columns);
+                return this;
+            }
+
+            public DeleteBuilder columns(String... columns) {
+                this.columns.addAll(List.of(columns));
+                return this;
+            }
+
+            public DeleteBuilder where(Optional<Predicate> where) {
+                this.where = where;
+                return this;
+            }
+
+            public DeleteBuilder where(String columnName, Comparison comparison, Object constant) {
+                this.where = Optional.of(new Predicate(columnName, comparison, constant));
+                return this;
+            }
+
+            public Delete statement() {
+                return new Delete(List.copyOf(columns), tableName, where);
+            }
+        }
+    }
+
+    public static Delete.DeleteBuilder delete(String tableName) {
+        return new Delete.DeleteBuilder(tableName);
     }
 
     public static Select.Builder select(String tableName) {
