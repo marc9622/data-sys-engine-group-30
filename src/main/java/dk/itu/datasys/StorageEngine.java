@@ -13,6 +13,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 
@@ -71,14 +74,35 @@ public final class StorageEngine {
      * Deletes all data files and the catalog file in the given data directory. This is useful for playing with the engine in a test environment.
      * @param dataDir the directory where all persistent state (catalog + data files) lives under
      */
-    public static void deleteAllData(Path dataDir) {
+    public static void deleteAllData(Path dataDir, Function<List<String>, Boolean> confirm) {
         requireNonNull(dataDir, "dataDir");
 
+        Function<Stream<Path>, Stream<File>> streamFilter = walker ->
+            walker.sorted(Comparator.reverseOrder())
+                .filter(path -> {
+                    String name = path.toString();
+                    return name.endsWith(".json")
+                        || name.endsWith(".lock")
+                        || name.endsWith(".bin");
+                })
+                .map(Path::toFile)
+                .filter(File::isFile);
+
         try {
-            Files.walk(dataDir)
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
+            List<String> dataPaths = streamFilter
+                .apply(Files.walk(dataDir))
+                .map(File::getName)
+                .toList();
+
+            if (!confirm.apply(dataPaths))
+                return;
+
+            streamFilter
+                .apply(Files.walk(dataDir))
+                .forEach(file -> {
+                    file.delete();
+                    LOGGER.debug("deleted data file: {}", file);
+                });
         } catch (IOException e) {
             throw new RuntimeException("failed to delete data dir: " + dataDir, e);
         }

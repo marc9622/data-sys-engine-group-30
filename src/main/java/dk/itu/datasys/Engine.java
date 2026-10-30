@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Scanner;
 
 public final class Engine {
     public static void main(String[] args) {
@@ -124,8 +125,29 @@ public final class Engine {
 
         Path dataDir = Path.of("data");
 
-        if (cliDeleteAllData)
-            StorageEngine.deleteAllData(dataDir);
+        if (cliDeleteAllData) {
+            System.out.println("Deleting all database files in `" + dataDir + "`");
+
+            StorageEngine.deleteAllData(dataDir, files -> {
+                if (files.isEmpty()) {
+                    System.out.println("Nothing to delete; no database files found");
+                    return false;
+                }
+
+                System.out.println("The following files will be deleted:");
+                for (String fileName : files)
+                    System.out.println("\t" + fileName);
+                System.out.print("Are you sure you want to delete them? (y/n): ");
+
+                Scanner scanner = new Scanner(System.in);
+                String input = scanner.nextLine().trim().toLowerCase();
+
+                boolean confirm = input.equals("y");
+
+                scanner.close();
+                return confirm;
+            });
+        }
 
         if (cliParseState == CliParseState.EMPTY)
             return;
