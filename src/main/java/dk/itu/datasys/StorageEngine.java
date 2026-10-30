@@ -90,7 +90,7 @@ public final class StorageEngine {
      * @param columns the list of columns for the table
      */
     public void createTable(Catalog catalog, String tableName, List<ColumnSpec> columns) {
-        markCatalog();
+        markCatalog(); 
 
         requireNonNull(tableName, "tableName");
         requireNonNull(columns, "columns");
@@ -122,7 +122,7 @@ public final class StorageEngine {
      * @param csvFilePath the path to the CSV file
      */
     public void copyFromCsvFile(Catalog catalog, String tableName, Path csvFilePath) {
-        markCatalog();
+        markCatalog(); 
 
         requireNonNull(tableName);
         requireNonNull(csvFilePath);
@@ -171,7 +171,9 @@ public final class StorageEngine {
         }
 
         long durationMs = System.currentTimeMillis() - startMs;
-        LOGGER.debug("copied from file table={} file={} rows={} partitions={} durationMs={}", tableName, csvFilePath, totalRows, partitions, durationMs);
+        // statement=COPY table=trips rows=8 partitions=2 version=2 durationMs=12
+        LOGGER.debug("statement=COPY table={} rows={} partitions={} version={} durationMs={}",
+                tableName, totalRows, partitions, table.version, durationMs);
     }
 
     /**
@@ -646,6 +648,10 @@ public final class StorageEngine {
                     ", columns=" + columns +
                     ", partitions=" + partitions +
                     '}';
+        }
+
+        public int getVersion() {
+            return version;
         }
     }
 
