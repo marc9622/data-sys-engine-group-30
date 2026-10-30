@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -9,6 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import dk.itu.datasys.StorageEngine.Catalog;
+import dk.itu.datasys.StorageEngine.ScanStats;
+import dk.itu.datasys.StorageEngine.TableMeta;
 import dk.itu.datasys.ops.Operator;
 
 public final class Executor {
@@ -18,6 +22,8 @@ public final class Executor {
     private final SqlParser parser;
     private final Binder binder;
     private final Planner planner;
+
+    private ScanStats lastScanStats = null;
 
     public Executor(StorageEngine engine) {
         this.engine = Objects.requireNonNull(engine, "engine");
@@ -57,35 +63,45 @@ public final class Executor {
     public List<Object[]> executeStatement(Statement statement) {
         Objects.requireNonNull(statement, "statement");
 
-        Utils.logExceptions(LOGGER, "failed to bind statement", () ->
-            binder.bind(statement));
+        Catalog catalog = engine.openCatalog();
 
-        return switch (statement) {
-            case Statement.CreateTable create ->
-                Utils.logExceptions(LOGGER, "failed to create table", () -> {
-                    engine.createTable(create.tableName(), create.columns());
-                    return List.of();
-                });
-            case Statement.Copy copy ->
-                Utils.logExceptions(LOGGER, "failed to copy csv file", () -> {
-                    engine.copyFromCsvFile(copy.tableName(), copy.csvFilePath());
-                    return List.of();
-                });
-            case Statement.Select select ->
-                Utils.logExceptions(LOGGER, "failed to execute query", () ->
-                    executeSelect(select));
-        };
+        try {
+            Utils.logExceptions(LOGGER, "failed to bind statement", () ->
+                binder.bind(catalog, statement));
+
+            List<Object[]> result = switch (statement) {
+                case Statement.CreateTable create ->
+                    Utils.logExceptions(LOGGER, "failed to create table", () -> {
+                        engine.createTable(catalog, create.tableName(), create.columns());
+                        return List.of();
+                    });
+                case Statement.Copy copy ->
+                    Utils.logExceptions(LOGGER, "failed to copy csv file", () -> {
+                        engine.copyFromCsvFile(catalog, copy.tableName(), Path.of(copy.csvFilePath()));
+                        return List.of();
+                    });
+                case Statement.Select select ->
+                    Utils.logExceptions(LOGGER, "failed to execute query", () ->
+                        executeSelect(catalog, select));
+            };
+        
+            return result;
+        }
+        finally {
+            engine.closeCatalog(catalog);
+        }
     }
 
-    public List<Object[]> executeSelect(Statement.Select select) {
+    public List<Object[]> executeSelect(Catalog catalog, Statement.Select select) {
         long planningStart = System.nanoTime();
         long startMs = System.currentTimeMillis();
 
         Plan plan = Utils.logExceptions(LOGGER, "failed to make plan", () ->
-            planner.plan(select));
+            planner.plan(catalog, select));
+
+        lastScanStats = plan.scanStats();
 
         double planningMs = (System.nanoTime() - planningStart) / 1_000_000.0;
-        engine.setLastScanStats(plan.scanStats());
 
         Operator root = plan.root();
         List<Object[]> rows = new ArrayList<>();
@@ -107,9 +123,24 @@ public final class Executor {
         LOGGER.debug("query complete rows={} durationMs={}", rows.size(), durationMs);
 
         double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
-        LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
-                planningMs, executionMs, planningMs + executionMs);
-        return rows;
+        
+        TableMeta tableMeta = catalog.tables.get(select.tableName());
+        int tableVersion = tableMeta.getVersion();
+        double elapsedMs = planningMs + executionMs;
+        
+        
+        LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
+                 select.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableVersion, elapsedMs);        
+        
+         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
+                 planningMs, executionMs, elapsedMs);
+        
+                
+                return rows;
+          
     }
 
+    public ScanStats getLastScanStats() {
+        return lastScanStats;
+    }
 }

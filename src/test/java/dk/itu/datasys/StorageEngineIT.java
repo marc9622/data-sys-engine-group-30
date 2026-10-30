@@ -6,11 +6,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
+import dk.itu.datasys.StorageEngine.Catalog;
 
 class StorageEngineIT {
 
@@ -18,11 +20,11 @@ class StorageEngineIT {
     void schemaPersistenceAndDuplicate(@TempDir Path tmp) {
         StorageEngine e1 = new StorageEngine(tmp);
         List<ColumnSpec> cols = tripsColumns.subList(0, 1);
-        e1.createTable("t", cols);
+        createTableWithCatalog(e1, "t", cols);
 
         // new engine should see table and reject duplicate create
         StorageEngine e2 = new StorageEngine(tmp);
-        assertThrows(IllegalArgumentException.class, () -> e2.createTable("t", cols));
+        assertThrows(IllegalArgumentException.class, () -> createTableWithCatalog(e2, "t", cols));
     }
 
     @Test
@@ -30,9 +32,9 @@ class StorageEngineIT {
         System.setProperty("maxRowsPerPartition", "2");
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = tripsColumns;
-        e.createTable("trips", cols);
+        createTableWithCatalog(e, "trips", cols);
         Path csv = resource("trips.csv");
-        e.copyFromCsvFile("trips", csv.toString());
+        copyFromCsvFileWithCatalog(e, "trips", csv);
 
         List<Object[]> all = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
         assertEquals(8, all.size());
@@ -48,9 +50,9 @@ class StorageEngineIT {
         System.setProperty("maxRowsPerPartition", "2");
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = tripsColumns;
-        e.createTable("trips", cols);
+        createTableWithCatalog(e, "trips", cols);
         Path csv = resource("trips.csv");
-        e.copyFromCsvFile("trips", csv.toString());
+        copyFromCsvFileWithCatalog(e, "trips", csv);
 
         Executor ex = new Executor(e);
 
@@ -71,9 +73,9 @@ class StorageEngineIT {
     void projectionSelect(@TempDir Path tmp) {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> sourceColumns = tripsColumns;
-        e.createTable(tripsName, sourceColumns);
+        createTableWithCatalog(e, tripsName, sourceColumns);
         Path csv = resource("trips.csv");
-        e.copyFromCsvFile(tripsName, csv.toString());
+        copyFromCsvFileWithCatalog(e, tripsName, csv);
 
         Object[] testedRow = tripsRows
             .stream()
@@ -110,9 +112,9 @@ class StorageEngineIT {
     void limitedSelect(@TempDir Path tmp) {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = tripsColumns;
-        e.createTable("trips", cols);
+        createTableWithCatalog(e, "trips", cols);
         Path csv = resource("trips.csv");
-        e.copyFromCsvFile("trips", csv.toString());
+        copyFromCsvFileWithCatalog(e, "trips", csv);
 
         Executor ex = new Executor(e);
 
@@ -131,9 +133,9 @@ class StorageEngineIT {
     void emptyResultAndErrors(@TempDir Path tmp) {
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
-        e.createTable("t", cols);
+        createTableWithCatalog(e, "t", cols);
         Path csv = resource("trips.csv");
-        e.copyFromCsvFile("t", csv.toString());
+        copyFromCsvFileWithCatalog(e, "t", csv);
 
         List<Object[]> none = new Executor(e).executeScript("SELECT * FROM t WHERE distance > 1000;").get(0);
         assertEquals(0, none.size());
@@ -151,11 +153,11 @@ class StorageEngineIT {
         System.setProperty("maxRowsPerPartition", "2");
         StorageEngine e = new StorageEngine(tmp);
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
-        e.createTable("trips", cols);
+        createTableWithCatalog(e, "trips", cols);
         Path csv = resource("trips.csv");
-        e.copyFromCsvFile("trips", csv.toString());
+        copyFromCsvFileWithCatalog(e, "trips", csv);
 
-        StorageEngine.TableMeta tm = e.catalogForTest().tables.get("trips");
+        StorageEngine.TableMeta tm = e.openCatalog().tables.get("trips");
         assertEquals(4, tm.partitions.size());
         // check distance min/max per partition (expected from original order)
         long[] expMin = new long[] {12, 95, 31, 88};
@@ -167,7 +169,7 @@ class StorageEngineIT {
 
         // data persistence: new engine should read same partitions
         StorageEngine e2 = new StorageEngine(tmp);
-        StorageEngine.TableMeta tm2 = e2.catalogForTest().tables.get("trips");
+        StorageEngine.TableMeta tm2 = e2.openCatalog().tables.get("trips");
         assertEquals(4, tm2.partitions.size());
     }
 
@@ -178,35 +180,37 @@ class StorageEngineIT {
 
         StorageEngine e = new StorageEngine(tmp);
 
-        e.createTable("trips", cols);
-        e.copyFromCsvFile("trips", resource("trips_sorted.csv").toString());
+        createTableWithCatalog(e, "trips", cols);
+        copyFromCsvFileWithCatalog(e, "trips", resource("trips_sorted.csv"));
 
-        List<Object[]> res = new Executor(e).executeScript("SELECT * FROM trips WHERE distance > 200;").get(0);
+        Executor ex = new Executor(e);
+
+        List<Object[]> res = ex.executeScript("SELECT * FROM trips WHERE distance > 200;").get(0);
         assertEquals(2, res.size());
-        StorageEngine.ScanStats stats = e.getLastScanStats();
+        StorageEngine.ScanStats stats = ex.getLastScanStats();
         assertTrue(stats.partitionsPruned() >= 2);
     }
 
     @Test
-    void dataPersistenceAfterCopy(@TempDir Path tmp) {
+    void dataPersistenceAfterCopy(@TempDir Path tmp) throws Exception {
         System.setProperty("maxRowsPerPartition", "2");
         List<ColumnSpec> cols = List.of(new ColumnSpec("city", ColumnType.STRING), new ColumnSpec("distance", ColumnType.LONG), new ColumnSpec("price", ColumnType.DOUBLE));
 
         // first engine
         StorageEngine e1 = new StorageEngine(tmp);
 
-        e1.createTable("trips", cols);
-        e1.copyFromCsvFile("trips", resource("trips.csv").toString());
+        createTableWithCatalog(e1, "trips", cols);
+        copyFromCsvFileWithCatalog(e1, "trips", resource("trips.csv"));
 
-        StorageEngine.Catalog c1 = e1.catalogForTest();
+        StorageEngine.Catalog c1 = e1.viewCatalogForTesting();
 
         // second engine
         StorageEngine e2 = new StorageEngine(tmp);
 
-        StorageEngine.Catalog c2 = e2.catalogForTest();
+        StorageEngine.Catalog c2 = e2.viewCatalogForTesting();
 
         // assert that both engines return equal catalogs
-        assertEquals(c1.tables, c2.tables);
+        assertEquals(c1, c2);
 
         // assert that both engines return same results for a query
         List<Object[]> out1 = new Executor(e1).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
@@ -220,4 +224,84 @@ class StorageEngineIT {
         }
     }
 
+    @Test
+    void catalogOpenClose(@TempDir Path tmp) throws Exception {
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+
+        assertFalse(e.isCatalogOpenForTesting());
+
+        ex.executeScript("CREATE TABLE t (city STRING, distance LONG, price DOUBLE);");
+
+        assertFalse(e.isCatalogOpenForTesting());
+
+        {
+            Catalog catalog = e.openCatalog();
+            assertTrue(e.isCatalogOpenForTesting());
+            e.copyFromCsvFile(catalog, "t", resource("trips.csv"));
+            assertTrue(e.isCatalogOpenForTesting());
+            e.closeCatalog(catalog);
+        }
+
+        assertFalse(e.isCatalogOpenForTesting());
+
+        {
+            Catalog catalog = e.openCatalog();
+            assertTrue(e.isCatalogOpenForTesting());
+            ex.executeSelect(catalog, Statement.select("t").statement());
+            assertTrue(e.isCatalogOpenForTesting());
+            e.closeCatalog(catalog);
+        }
+
+        assertFalse(e.isCatalogOpenForTesting());
+    }
+
+    @Test
+    void multipleCopies(@TempDir Path tmp) throws Exception {
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+
+        List<List<Object[]>> results = ex.executeScript(
+            "CREATE TABLE t (city STRING, distance LONG, price DOUBLE);" +
+            "COPY t FROM '" + resource("trips.csv") + "';" +
+            "COPY t FROM '" + resource("trips.csv") + "';" +
+            "SELECT * FROM t WHERE distance > 100;");
+
+        List<Object[]> actual = results.getLast();
+        List<Object[]> expected = parseCsvFile(resource("trips.csv"))
+            .stream()
+            .filter(r -> (Long) r[1] > 100)
+            .flatMap(r -> Stream.of(r, r))
+            .toList();
+
+        assertEquals(expected.size(), actual.size());
+    }
+
+    @Test
+    void tableVersioning(@TempDir Path tmp) throws Exception {
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+
+        int version = -1;
+
+        ex.executeScript("CREATE TABLE t (city STRING, distance LONG, price DOUBLE);");
+        assertTableVersion(++version, e, "t");
+
+        ex.executeScript("COPY t FROM '" + resource("trips.csv") + "';");
+        assertTableVersion(++version, e, "t");
+
+        ex.executeScript("SELECT * FROM t WHERE distance > 100;");
+        assertTableVersion(version, e, "t");
+
+        ex.executeScript("COPY t FROM '" + resource("trips.csv") + "';");
+        assertTableVersion(++version, e, "t");
+
+        ex.executeScript("SELECT * FROM t WHERE distance > 100;");
+        assertTableVersion(version, e, "t");
+    }
+
+    void assertTableVersion(int expected, StorageEngine engine, String tableName) {
+        int actual = engine.viewCatalogForTesting().tables.get(tableName).version;
+        assertEquals(expected, actual, "Expected table version " + expected + ", but got " + actual);
+    }
 }

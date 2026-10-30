@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.Spec.ColumnType;
+import dk.itu.datasys.StorageEngine.Catalog;
 
 public final class Binder {
     private static final Logger LOGGER = LoggerFactory.getLogger(Binder.class);
@@ -20,13 +21,13 @@ public final class Binder {
         this.engine = Objects.requireNonNull(engine, "engine");
     }
 
-    public void bind(Statement s) {
+    public void bind(Catalog catalog, Statement s) {
         Objects.requireNonNull(s, "s");
 
         switch (s) {
             case Statement.CreateTable create -> bindCreateTable(create);
             case Statement.Copy copy -> bindCopy(copy);
-            case Statement.Select select -> bindSelect(select);
+            case Statement.Select select -> bindSelect(catalog, select);
             default -> throw new IllegalArgumentException("unsupported statement: " + s);
         }
     }
@@ -55,8 +56,8 @@ public final class Binder {
         LOGGER.debug("bound copy statement table={} csvFilePath={}", copy.tableName(), copy.csvFilePath());
     }
 
-    private void bindSelect(Statement.Select select) {
-        List<ColumnSpec> schema = engine.schema(select.tableName()); 
+    private void bindSelect(Catalog catalog, Statement.Select select) {
+        List<ColumnSpec> schema = engine.schema(catalog, select.tableName()); 
 
         Optional<Statement.Select.Predicate> where = select.where(); 
         if (where.isEmpty()) {

@@ -7,13 +7,9 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.Scanner;
 
 public final class Engine {
-    private static final Logger LOGGER = LoggerFactory.getLogger(Engine.class);
-
     public static void main(String[] args) {
         try {
             switch (args.length) {
@@ -37,6 +33,8 @@ public final class Engine {
         }
 
         CliParseState cliParseState = CliParseState.EMPTY;
+
+        boolean cliDeleteAllData = false;
 
         String sql = "";
         while (args.hasNext()) {
@@ -91,6 +89,17 @@ public final class Engine {
 
                     yield CliParseState.QUERY_STATEMENT;
                 }
+                case "--delete-all-data" -> {
+                    if (cliDeleteAllData) {
+                        System.out.println("Only one `--delete-all-data` argument is allowed per command");
+                        printUsage();
+                        System.exit(1);
+                    }
+
+                    cliDeleteAllData = true;
+
+                    yield cliParseState;
+                }
                 case String arg -> {
                     switch (cliParseState) {
                         case EMPTY, QUERY_FILE -> {
@@ -108,15 +117,44 @@ public final class Engine {
             };
         }
 
-        assert cliParseState != CliParseState.EMPTY;
-
         if (cliParseState == CliParseState.QUERY_STATEMENT) {
             sql = sql.stripTrailing();
             if (!sql.endsWith(";"))
                 sql += ";";
         }
 
-        Executor executor = new Executor(new StorageEngine(Path.of("data")));
+        Path dataDir = Path.of("data");
+
+        if (cliDeleteAllData) {
+            System.out.println("Deleting all database files in `" + dataDir + "`");
+
+            StorageEngine.deleteAllData(dataDir, files -> {
+                if (files.isEmpty()) {
+                    System.out.println("Nothing to delete; no database files found");
+                    return false;
+                }
+
+                System.out.println("The following files will be deleted:");
+                for (String fileName : files)
+                    System.out.println("\t" + fileName);
+                System.out.print("Are you sure you want to delete them? (y/n): ");
+
+                Scanner scanner = new Scanner(System.in);
+                String input = scanner.nextLine().trim().toLowerCase();
+
+                boolean confirm = input.equals("y");
+
+                scanner.close();
+                return confirm;
+            });
+        }
+
+        if (cliParseState == CliParseState.EMPTY)
+            return;
+
+        StorageEngine storageEngine = new StorageEngine(dataDir);
+        Executor executor = new Executor(storageEngine);
+
         for (List<Object[]> statementRows : executor.executeScript(sql)) {
             for (Object[] row : statementRows)
                 System.out.println(csvRow(row));
@@ -126,6 +164,7 @@ public final class Engine {
     private static void printUsage() {
         System.out.println("Usage: ./engine -c \"SELECT * FROM trips\"");
         System.out.println("       ./engine -f script.sql");
+        System.out.println("       ./engine --delete-all-data\t# WARNING: deletes all database files before running queries");
     }
 
     private static String csvRow(Object[] row) {

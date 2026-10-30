@@ -4,11 +4,19 @@ import java.io.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
+import java.nio.file.StandardCopyOption;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
+
 import static java.util.Objects.requireNonNull;
 
 import org.slf4j.Logger;
@@ -21,12 +29,29 @@ public final class StorageEngine {
 
     public static record ScanStats(int partitionsTotal, int partitionsRead, int partitionsPruned) { }
 
+    private static final String catalogFileName = "catalog.json";
+    private static final String catalogLockFileName = "catalog.lock";
+    private static String tempCatalogFileName() {
+        int random = ThreadLocalRandom.current().nextInt(0, 10000);
+        return "catalog_temp_" + String.format("%04d", random) + ".json";
+    }
+
+    private enum CatalogState {
+        NONE, OPEN_CLEAN, OPEN_DIRTY;
+
+        boolean isOpen() {
+            return this == OPEN_CLEAN || this == OPEN_DIRTY;
+        }
+    }
+
+    private CatalogState catalogState = CatalogState.NONE;
+
     private final Path dataDir;
     private final Path catalogPath;
-    private final Catalog catalog;
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
-    private volatile ScanStats lastScanStats = new ScanStats(0, 0, 0);
     private final int maxRowsPerPartition;
+
+    // ---------- Public API ----------
 
     /**
      * @param dataDir the directory where all persistent state (catalog + data files) lives under
@@ -35,7 +60,7 @@ public final class StorageEngine {
         requireNonNull(dataDir, "dataDir");
 
         this.dataDir = dataDir;
-        this.catalogPath = dataDir.resolve("catalog.json");
+        this.catalogPath = dataDir.resolve(catalogFileName);
         this.maxRowsPerPartition = Integer.getInteger("maxRowsPerPartition", 1000);
 
         try {
@@ -43,27 +68,44 @@ public final class StorageEngine {
         } catch (IOException e) {
             throw new RuntimeException("cannot create data dir: " + dataDir, e);
         }
+    }
 
-        if (Files.exists(catalogPath)) {
-            try {
-                this.catalog = mapper.readValue(catalogPath.toFile(), Catalog.class);
-                for (TableMeta table : catalog.tables.values())
-                    normalizePartitionStats(table);
-            } catch (Exception e) {
-                throw new RuntimeException("failed to read catalog", e);
-            }
-        } else {
-            this.catalog = new Catalog();
-            persistCatalog();
+    /**
+     * Deletes all data files and the catalog file in the given data directory. This is useful for playing with the engine in a test environment.
+     * @param dataDir the directory where all persistent state (catalog + data files) lives under
+     */
+    public static void deleteAllData(Path dataDir, Function<List<String>, Boolean> confirm) {
+        requireNonNull(dataDir, "dataDir");
+
+        Function<Stream<Path>, Stream<File>> streamFilter = walker ->
+            walker.sorted(Comparator.reverseOrder())
+                .filter(path -> {
+                    String name = path.toString();
+                    return name.endsWith(".json")
+                        || name.endsWith(".lock")
+                        || name.endsWith(".bin");
+                })
+                .map(Path::toFile)
+                .filter(File::isFile);
+
+        try {
+            List<String> dataPaths = streamFilter
+                .apply(Files.walk(dataDir))
+                .map(File::getName)
+                .toList();
+
+            if (!confirm.apply(dataPaths))
+                return;
+
+            streamFilter
+                .apply(Files.walk(dataDir))
+                .forEach(file -> {
+                    file.delete();
+                    LOGGER.debug("deleted data file: {}", file);
+                });
+        } catch (IOException e) {
+            throw new RuntimeException("failed to delete data dir: " + dataDir, e);
         }
-    }
-
-    public ScanStats getLastScanStats() {
-        return lastScanStats;
-    }
-
-    void setLastScanStats(ScanStats scanStats) {
-        lastScanStats = requireNonNull(scanStats, "scanStats");
     }
 
     /**
@@ -71,32 +113,31 @@ public final class StorageEngine {
      * @param tableName the name of the table to create
      * @param columns the list of columns for the table
      */
-    public void createTable(String tableName, List<ColumnSpec> columns) {
+    public void createTable(Catalog catalog, String tableName, List<ColumnSpec> columns) {
+        markCatalog(); 
+
         requireNonNull(tableName, "tableName");
         requireNonNull(columns, "columns");
 
-        if (columns.isEmpty())
-            throw new IllegalArgumentException("empty column list");
+        assert !columns.isEmpty();
 
         long startMs = System.currentTimeMillis();
-        synchronized (catalog) {
-            if (catalog.tables.containsKey(tableName))
-                throw new IllegalArgumentException("table already exists: " + tableName);
 
-            // check duplicate column names
-            HashSet<String> names = new HashSet<>();
-            for (ColumnSpec c : columns) {
-                if (!names.add(c.name()))
-                    throw new IllegalArgumentException("duplicate column name: " + c.name());
-            }
+        if (catalog.tables.containsKey(tableName))
+            throw new IllegalArgumentException("table already exists: " + tableName);
 
-            TableMeta meta = new TableMeta(new ArrayList<>(columns));
-            catalog.tables.put(tableName, meta);
-            persistCatalog();
-
-            long durationMs = System.currentTimeMillis() - startMs;
-            LOGGER.debug("created table table={} cols={} durationMs={}", tableName, columns.size(), durationMs);
+        // check duplicate column names
+        HashSet<String> names = new HashSet<>();
+        for (ColumnSpec c : columns) {
+            if (!names.add(c.name()))
+                throw new IllegalArgumentException("duplicate column name: " + c.name());
         }
+
+        TableMeta meta = new TableMeta(new ArrayList<>(columns));
+        catalog.tables.put(tableName, meta);
+
+        long durationMs = System.currentTimeMillis() - startMs;
+        LOGGER.debug("created table table={} cols={} durationMs={}", tableName, columns.size(), durationMs);
     }
 
     /**
@@ -104,31 +145,27 @@ public final class StorageEngine {
      * @param tableName the name of the table to copy data into
      * @param csvFilePath the path to the CSV file
      */
-    public void copyFromCsvFile(String tableName, String csvFilePath) {
+    public void copyFromCsvFile(Catalog catalog, String tableName, Path csvFilePath) {
+        markCatalog(); 
+
         requireNonNull(tableName);
         requireNonNull(csvFilePath);
 
         long startMs = System.currentTimeMillis();
 
-        TableMeta table;
-        synchronized (catalog) {
-            table = catalog.tables.get(tableName);
-            if (table == null)
-                throw new IllegalArgumentException("unknown table: " + tableName);
-            if (table.hasData)
-                throw new UnsupportedOperationException("table already has data: " + tableName);
-            table.hasData = true; // reserve
-            persistCatalog();
-        }
+        TableMeta table = catalog.tables.get(tableName);
+        if (table == null)
+            throw new IllegalArgumentException("unknown table: " + tableName);
 
-        Path csv = Path.of(csvFilePath);
-        if (!Files.exists(csv))
+        table.version++;
+
+        if (!Files.exists(csvFilePath))
             throw new IllegalArgumentException("csv file not found: " + csvFilePath);
 
         int totalRows = 0;
         int partitions = 0;
 
-        try (BufferedReader r = Files.newBufferedReader(csv, StandardCharsets.US_ASCII)) {
+        try (BufferedReader r = Files.newBufferedReader(csvFilePath, StandardCharsets.US_ASCII)) {
             String line;
             List<Object[]> buffer = new ArrayList<>();
             while ((line = r.readLine()) != null) {
@@ -153,14 +190,52 @@ public final class StorageEngine {
                 partitions++;
             }
 
-            long durationMs = System.currentTimeMillis() - startMs;
-            synchronized (catalog) {
-                persistCatalog();
-            }
-
-            LOGGER.debug("copied from file table={} file={} rows={} partitions={} durationMs={}", tableName, csvFilePath, totalRows, partitions, durationMs);
         } catch (IOException e) {
             throw new RuntimeException("io error copying file", e);
+        }
+
+        long durationMs = System.currentTimeMillis() - startMs;
+        // statement=COPY table=trips rows=8 partitions=2 version=2 durationMs=12
+        LOGGER.debug("statement=COPY table={} rows={} partitions={} version={} durationMs={}",
+                tableName, totalRows, partitions, table.version, durationMs);
+    }
+
+    /**
+     * Reads all rows from one partition without applying a predicate.
+     * Partition selection belongs to the planner; row filtering belongs to a
+     * FilterOperator.
+     * @param tableName the name of the table
+     * @param partition the partition metadata to read
+     */
+    public List<Object[]> readPartitionRows(Catalog catalog, String tableName, PartitionMeta partition) {
+        requireNonNull(tableName);
+        requireNonNull(partition);
+
+        TableMeta table = catalog.tables.get(tableName);
+
+        if (table == null)
+            throw new IllegalArgumentException("unknown table: " + tableName);
+
+        Path partFile = dataDir.resolve(partition.fileName);
+        try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
+            int rows = in.readInt();
+            int cols = table.columns.size();
+            readPartitionStats(in, table.columns, partition);
+
+            List<Object[]> colData = new ArrayList<>(cols);
+            for (ColumnSpec column : table.columns)
+                colData.add(readPartitionColumn(in, column.type(), rows));
+
+            List<Object[]> result = new ArrayList<>(rows);
+            for (int r = 0; r < rows; r++) {
+                Object[] row = new Object[cols];
+                for (int c = 0; c < cols; c++)
+                    row[c] = colData.get(c)[r];
+                result.add(row);
+            }
+            return result;
+        } catch (IOException e) {
+            throw new RuntimeException("failed reading partition " + partFile, e);
         }
     }
 
@@ -168,15 +243,14 @@ public final class StorageEngine {
      * Returns the schema (list of columns) for the given table.
      * @param tableName the name of the table
      */
-    public List<ColumnSpec> schema(String tableName) {
+    public List<ColumnSpec> schema(Catalog catalog, String tableName) {
         requireNonNull(tableName);
 
-        synchronized (catalog) {
-            TableMeta table = catalog.tables.get(tableName);
-            if (table == null)
-                throw new IllegalArgumentException("unknown table: " + tableName);
-            return List.copyOf(table.columns);
-        }
+        TableMeta table = catalog.tables.get(tableName);
+        if (table == null)
+            throw new IllegalArgumentException("unknown table: " + tableName);
+
+        return List.copyOf(table.columns);
     }
 
     /**
@@ -185,22 +259,63 @@ public final class StorageEngine {
     public boolean doesTableExist(String tableName) {
         requireNonNull(tableName);
 
-        synchronized (catalog) {
+        try {
+            Catalog catalog = readCatalog();
+
             return catalog.tables.containsKey(tableName);
+        } catch (FileNotFoundException e) {
+            return false;
         }
     }
 
     /**
      * Returns the table's partition metadata without reading partition data.
      */
-    public List<PartitionMeta> partitions(String tableName) {
+    public List<PartitionMeta> partitions(Catalog catalog, String tableName) {
         requireNonNull(tableName);
 
-        synchronized (catalog) {
-            TableMeta table = catalog.tables.get(tableName);
-            if (table == null)
-                throw new IllegalArgumentException("unknown table: " + tableName);
-            return List.copyOf(table.partitions);
+        TableMeta table = catalog.tables.get(tableName);
+        if (table == null)
+            throw new IllegalArgumentException("unknown table: " + tableName);
+
+        return List.copyOf(table.partitions);
+    }
+
+    /**
+     * Returns the catalog for a SELECT query. If the catalog file does not exist, it creates an empty catalog and returns that.
+     */
+    public Catalog openCatalog() {
+        assert !catalogState.isOpen() : "a catalog is already open; close it before opening again";
+
+        catalogState = CatalogState.OPEN_CLEAN;
+
+        return readOrCreateEmptyCatalog();
+    }
+
+    private void markCatalog() {
+        assert catalogState == CatalogState.OPEN_CLEAN : "catalog is not open or already dirty; cannot mark dirty";
+
+        catalogState = CatalogState.OPEN_DIRTY;
+    }
+
+    public void closeCatalog(Catalog catalog) {
+        assert catalogState.isOpen() : "catalog is not open; cannot close";
+
+        if (catalogState == CatalogState.OPEN_DIRTY)
+            commitCatalog(catalog);
+
+        catalogState = CatalogState.NONE;
+    }
+
+    public boolean isCatalogOpenForTesting() {
+        return catalogState.isOpen();
+    }
+
+    public Catalog viewCatalogForTesting() {
+        try {
+            return readCatalog();
+        } catch (FileNotFoundException e) {
+            return new Catalog();
         }
     }
 
@@ -235,8 +350,8 @@ public final class StorageEngine {
     public static sealed interface ParseCsvLineResult permits ParseCsvLineResult.Success, ParseCsvLineResult.Malformed {
         public static record Success(Object[] row) implements ParseCsvLineResult {}
         public static record Malformed(int charNumber, String description, Throwable cause) implements ParseCsvLineResult {
-            public RuntimeException toRuntimeException(String fileName, int lineNumber) {
-                String message = "Malformed CSV in `" + fileName + "` at line " + lineNumber;
+            public RuntimeException toRuntimeException(Path filePath, int lineNumber) {
+                String message = "Malformed CSV in `" + filePath + "` at line " + lineNumber;
                 if (charNumber >= 0)
                     message += ":" + charNumber;
                 message += ": " + description;
@@ -347,7 +462,7 @@ public final class StorageEngine {
         }
     }
 
-    static void writePartitionColumn(DataOutputStream outp, ColumnType t, List<Object[]> rows, int colIndex) throws IOException {
+    private static void writePartitionColumn(DataOutputStream outp, ColumnType t, List<Object[]> rows, int colIndex) throws IOException {
         for (Object[] row : rows) {
             Object val = row[colIndex];
 
@@ -389,46 +504,7 @@ public final class StorageEngine {
         }
     }
 
-    /**
-     * Reads all rows from one partition without applying a predicate.
-     * Partition selection belongs to the planner; row filtering belongs to a
-     * FilterOperator.
-     */
-    public List<Object[]> readPartitionRows(String tableName, PartitionMeta partition) {
-        requireNonNull(tableName);
-        requireNonNull(partition);
-
-        TableMeta table;
-        synchronized (catalog) {
-            table = catalog.tables.get(tableName);
-            if (table == null)
-                throw new IllegalArgumentException("unknown table: " + tableName);
-        }
-
-        Path partFile = dataDir.resolve(partition.fileName);
-        try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
-            int rows = in.readInt();
-            int cols = table.columns.size();
-            readPartitionStats(in, table.columns, partition);
-
-            List<Object[]> colData = new ArrayList<>(cols);
-            for (ColumnSpec column : table.columns)
-                colData.add(readPartitionColumn(in, column.type(), rows));
-
-            List<Object[]> result = new ArrayList<>(rows);
-            for (int r = 0; r < rows; r++) {
-                Object[] row = new Object[cols];
-                for (int c = 0; c < cols; c++)
-                    row[c] = colData.get(c)[r];
-                result.add(row);
-            }
-            return result;
-        } catch (IOException e) {
-            throw new RuntimeException("failed reading partition " + partFile, e);
-        }
-    }
-
-    static Object[] readPartitionColumn(DataInputStream in, ColumnType t, int rows) throws IOException {
+    private static Object[] readPartitionColumn(DataInputStream in, ColumnType t, int rows) throws IOException {
         Object[] values = new Object[rows];
         for (int r = 0; r < rows; r++) {
             values[r] = decodeValue(in, t);
@@ -436,25 +512,58 @@ public final class StorageEngine {
         return values;
     }
 
-    Catalog catalogForTest() { return catalog; }
+    // ---------- Catalog Helpers ----------
 
-    private void persistCatalog() {
+    // Apparently, Windows can give us an error if we try to rename replacing an existing file while another process has it open.
+    // So we use a lock file to ensure that readers finish before we replace the catalog file.
+    private static boolean IS_WINDOWS = System.getProperty("os.name").toLowerCase().contains("win");
+
+    private Catalog readOrCreateEmptyCatalog() {
         try {
-            mapper.writeValue(catalogPath.toFile(), catalog);
-        } catch (IOException e) {
-            throw new RuntimeException("failed to write catalog", e);
+            return readCatalog();
+        } catch (FileNotFoundException e) {
+            Catalog catalog = new Catalog();
+            commitCatalog(catalog);
+            return catalog;
         }
     }
 
-    private static void normalizePartitionStats(TableMeta table) {
-        for (PartitionMeta partition : table.partitions) {
-            if (partition.mins == null || partition.maxs == null)
-                throw new IllegalArgumentException("partition statistics missing: " + partition.fileName);
+    private Catalog readCatalog() throws FileNotFoundException {
+        File catalogLockFile = catalogPath.resolveSibling(catalogLockFileName).toFile();
 
-            for (int columnIndex = 0; columnIndex < table.columns.size(); columnIndex++) {
-                ColumnType type = table.columns.get(columnIndex).type();
-                partition.mins.set(columnIndex, normalizeStat(partition.mins.get(columnIndex), type));
-                partition.maxs.set(columnIndex, normalizeStat(partition.maxs.get(columnIndex), type));
+        Catalog catalog;
+        if (!IS_WINDOWS) {
+            catalog = readCatalogUnlocked();
+            normalizePartitionStats(catalog);
+            return catalog;
+        }
+
+        try (
+            RandomAccessFile raf = new RandomAccessFile(catalogLockFile, "rw");
+            FileChannel lockChannel = raf.getChannel();
+            FileLock _ = lockChannel.lock(0, Long.MAX_VALUE, true)
+        ) {
+            catalog = readCatalogUnlocked();
+            normalizePartitionStats(catalog);
+            return catalog;
+        } catch (FileNotFoundException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new RuntimeException("failed to lock catalog for reading", e);
+        }
+    }
+
+    /**
+     * Normalizes the partition statistics to ensure that they are of the correct type. This is necessary because the statistics may be read from a JSON file, which does not preserve the original types of the values.
+     */
+    private static void normalizePartitionStats(Catalog catalog) {
+        for (TableMeta table : catalog.tables.values()) {
+            for (PartitionMeta partition : table.partitions) {
+                for (int columnIndex = 0; columnIndex < table.columns.size(); columnIndex++) {
+                    ColumnType type = table.columns.get(columnIndex).type();
+                    partition.mins.set(columnIndex, normalizeStat(partition.mins.get(columnIndex), type));
+                    partition.maxs.set(columnIndex, normalizeStat(partition.maxs.get(columnIndex), type));
+                }
             }
         }
     }
@@ -470,11 +579,58 @@ public final class StorageEngine {
         };
     }
 
+    private Catalog readCatalogUnlocked() throws FileNotFoundException {
+        try {
+            return mapper.readValue(catalogPath.toFile(), Catalog.class);
+        } catch (FileNotFoundException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new RuntimeException("failed to read catalog", e);
+        }
+    }
+
+    private void commitCatalog(Catalog catalog) {
+        File tempCatalogFile = catalogPath.resolveSibling(tempCatalogFileName()).toFile();
+
+        try {
+            mapper.writeValue(tempCatalogFile, catalog);
+        } catch (IOException e) {
+            throw new RuntimeException("failed to write catalog", e);
+        }
+
+        File catalogLockFile = catalogPath.resolveSibling(catalogLockFileName).toFile();
+
+        if (!IS_WINDOWS) {
+            renameReplaceTempCatalogUnlocked(tempCatalogFile.toPath());
+            return;
+        }
+
+        try (
+            RandomAccessFile raf = new RandomAccessFile(catalogLockFile, "rw");
+            FileChannel lockChannel = raf.getChannel();
+            FileLock _ = lockChannel.lock(0, Long.MAX_VALUE, false); // Blocks here until readers finish
+        ) {
+            renameReplaceTempCatalogUnlocked(tempCatalogFile.toPath());
+        } catch (IOException e) {
+            throw new RuntimeException("failed to lock catalog for writing", e);
+        }
+    }
+
+    private void renameReplaceTempCatalogUnlocked(Path tempCatalogFilePath) {
+        // TODO: For concurrency, we should check that our catalog changes won't conflict with other concurrent catalog changes.
+        try {
+            Files.move(tempCatalogFilePath, catalogPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            throw new RuntimeException("failed to commit catalog", e);
+        }
+    }
+
     // ---------- Metadata Classes ----------
 
     public static final class Catalog {
         public Map<String, TableMeta> tables = new HashMap<>();
-        public Catalog() {}
+
+        public Catalog() {} // Needed for deserialization
 
         @Override
         public boolean equals(Object o) {
@@ -482,16 +638,23 @@ public final class StorageEngine {
             if (!(o instanceof Catalog that)) return false;
             return Objects.equals(tables, that.tables);
         }
+
+        @Override
+        public String toString() {
+            return "Catalog{" +
+                    "tables=" + tables +
+                    '}';
+        }
     }
 
     public static final class TableMeta {
-        public List<ColumnSpec> columns = new ArrayList<>();
-        public List<PartitionMeta> partitions = new ArrayList<>();
-        private boolean hasData = false;
+        public int version = 0;
+        public final List<ColumnSpec> columns = new ArrayList<>();
+        public final List<PartitionMeta> partitions = new ArrayList<>();
 
-        public TableMeta() {}
+        public TableMeta() {} // Needed for deserialization
         public TableMeta(List<ColumnSpec> columns) {
-            this.columns = columns;
+            this.columns.addAll(columns);
         }
 
         @Override
@@ -501,20 +664,43 @@ public final class StorageEngine {
             return Objects.equals(columns, that.columns) &&
                    Objects.equals(partitions, that.partitions);
         }
+
+        @Override
+        public String toString() {
+            return "TableMeta{" +
+                    "version=" + version +
+                    ", columns=" + columns +
+                    ", partitions=" + partitions +
+                    '}';
+        }
+
+        public int getVersion() {
+            return version;
+        }
     }
 
     public static final class PartitionMeta {
-        public String fileName;
+        public final String fileName;
         public List<Object> mins;
         public List<Object> maxs;
-        public int rowCount;
+        public final int rowCount;
+        public Integer deprecatedSince = null;
 
-        public PartitionMeta() {}
+        public PartitionMeta() { // Needed for deserialization
+            this.fileName = null;
+            this.rowCount = 0;
+        }
         public PartitionMeta(String fileName, List<Object> mins, List<Object> maxs, int rowCount) {
             this.fileName = fileName;
             this.mins = mins;
             this.maxs = maxs;
             this.rowCount = rowCount;
+        }
+
+        public void markDeprecated(int version) {
+            assert deprecatedSince == null;
+
+            deprecatedSince = version;
         }
 
         @Override
@@ -526,6 +712,16 @@ public final class StorageEngine {
                    Objects.equals(mins, that.mins) &&
                    Objects.equals(maxs, that.maxs);
         }
-    }
 
+        @Override
+        public String toString() {
+            return "PartitionMeta{" +
+                    "fileName='" + fileName + '\'' +
+                    ", mins=" + mins +
+                    ", maxs=" + maxs +
+                    ", rowCount=" + rowCount +
+                    ", deprecatedSince=" + deprecatedSince +
+                    '}';
+        }
+    }
 }
