@@ -35,6 +35,10 @@ public final class StorageEngine {
         return "catalog_temp_" + String.format("%04d", random) + ".json";
     }
 
+    private static String partitionFileName(String tableName, int partitionIdx) {
+        return tableName + "-part-" + partitionIdx + ".bin";
+    }
+
     private enum CatalogState {
         NONE, OPEN_CLEAN, OPEN_DIRTY;
 
@@ -70,7 +74,8 @@ public final class StorageEngine {
     }
 
     /**
-     * Deletes all data files and the catalog file in the given data directory. This is useful for playing with the engine in a test environment.
+     * Deletes all data files and the catalog file in the given data directory.
+     * This is useful for playing with the engine in a test environment.
      * @param dataDir the directory where all persistent state (catalog + data files) lives under
      */
     public static void deleteAllData(Path dataDir, Function<List<String>, Boolean> confirm) {
@@ -140,7 +145,8 @@ public final class StorageEngine {
     }
 
     /**
-     * Copies the data from a CSV file into an empty table. The CSV file must have the same number of columns as the table, and the column types must match.
+     * Copies the data from a CSV file into an empty table.
+     * The CSV file must have the same number of columns as the table, and the column types must match.
      * @param tableName the name of the table to copy data into
      * @param csvFilePath the path to the CSV file
      */
@@ -162,7 +168,7 @@ public final class StorageEngine {
             throw new IllegalArgumentException("csv file not found: " + csvFilePath);
 
         int totalRows = 0;
-        int partitions = 0;
+        int previousNextPartitionNumber = table.nextPartitionNumber;
 
         try (BufferedReader r = Files.newBufferedReader(csvFilePath, StandardCharsets.US_ASCII)) {
             String line;
@@ -178,15 +184,13 @@ public final class StorageEngine {
 
                 buffer.add(parsed);
                 if (buffer.size() >= maxRowsPerPartition) {
-                    writePartition(tableName, table, buffer, partitions);
-                    partitions++;
+                    writePartition(tableName, table, buffer, table.nextPartitionNumber++);
                     buffer.clear();
                 }
             }
 
             if (!buffer.isEmpty()) {
-                writePartition(tableName, table, buffer, partitions);
-                partitions++;
+                writePartition(tableName, table, buffer, table.nextPartitionNumber++);
             }
 
         } catch (IOException e) {
@@ -194,22 +198,26 @@ public final class StorageEngine {
         }
 
         long durationMs = System.currentTimeMillis() - startMs;
-        // statement=COPY table=trips rows=8 partitions=2 version=2 durationMs=12
-        LOGGER.debug("statement=COPY table={} rows={} partitions={} version={} durationMs={}",
-                tableName, totalRows, partitions, table.version, durationMs);
+
+        int newPartitions = table.nextPartitionNumber - previousNextPartitionNumber;
+        LOGGER.debug("statement=COPY table={} rowsWritten={} newPartitions={} version={} durationMs={}",
+                tableName, totalRows, newPartitions, table.version, durationMs);
     }
 
     /**
-     * Deletes rows using copy-on-write. Active partitions that cannot contain a
-     * match are carried over by reference; candidate partitions are replaced by
-     * newly written partitions and the old metadata is retained as deprecated
-     * history.
+     * Deletes rows using copy-on-write.
+     * Active partitions that cannot contain a match are left untouched.
+     * Candidate partitions are replaced by newly written partitions and the old metadata is marked as deprecated.
+     * @param tableName the name of the table to delete from
+     * @param predicate an optional predicate to filter rows to delete
      */
     public int deleteFromTable(Catalog catalog, String tableName, Optional<Statement.Predicate> predicate) {
         markCatalog();
 
         requireNonNull(tableName);
         requireNonNull(predicate);
+
+        long startMs = System.currentTimeMillis();
 
         TableMeta table = catalog.tables.get(tableName);
         if (table == null)
@@ -219,53 +227,58 @@ public final class StorageEngine {
         int predicateColumn = predicate
                 .map(p -> columnIndex(schema, p.columnName()))
                 .orElse(-1);
-        List<PartitionMeta> activePartitions = partitions(catalog, tableName);
-        List<PartitionMeta> candidates = new ArrayList<>();
-        List<PartitionMeta> replacements = new ArrayList<>();
+
+        List<PartitionMeta> affectedPartitions = new ArrayList<>();
+        List<PartitionMeta> newPartitions = new ArrayList<>();
+
         int rowsDeleted = 0;
-        int nextPartitionNumber = table.partitions.size();
         int previousVersion = table.version;
-        int newVersion = previousVersion + 1;
+        table.version++;
 
-        for (PartitionMeta partition : activePartitions) {
-            boolean mayContain = predicate.isEmpty() || partitionMayContain(
-                    partition.mins.get(predicateColumn),
-                    partition.maxs.get(predicateColumn),
-                    predicate.get().comparison(),
-                    predicate.get().constant(),
-                    schema.get(predicateColumn).type());
+        for (PartitionMeta partition : partitions(catalog, tableName)) {
+            boolean mayContain = predicate.isEmpty()
+                    || partitionMayContain(
+                            partition.mins.get(predicateColumn),
+                            partition.maxs.get(predicateColumn),
+                            predicate.get().comparison(),
+                            predicate.get().constant(),
+                            schema.get(predicateColumn).type()
+                        );
 
-            if (!mayContain) {
+            if (!mayContain)
                 continue;
-            }
-            candidates.add(partition);
 
             List<Object[]> keptRows = new ArrayList<>();
             for (Object[] row : readPartitionRows(catalog, tableName, partition)) {
                 boolean matches = predicate.isEmpty()
-                        || predicate.get().matches(row[predicateColumn], schema.get(predicateColumn).type());
-                if (matches) {
+                        || predicate.get().matches(
+                                row[predicateColumn],
+                                schema.get(predicateColumn).type()
+                            );
+
+                if (matches)
                     rowsDeleted++;
-                }
-                else {
+                else
                     keptRows.add(row);
-                }
             }
 
+            if (keptRows.size() < partition.rowCount)
+                affectedPartitions.add(partition);
+
             if (!keptRows.isEmpty()) {
-                String fileName = tableName + "-part-" + nextPartitionNumber++ + ".bin";
-                replacements.add(writePartitionFile(tableName, table, keptRows, fileName));
+                String fileName = partitionFileName(tableName, table.nextPartitionNumber++);
+                newPartitions.add(writePartitionFile(tableName, table, keptRows, fileName));
             }
         }
 
-        for (PartitionMeta partition : candidates)
+        for (PartitionMeta partition : affectedPartitions)
             partition.markDeprecated(previousVersion);
 
-        table.partitions.addAll(replacements);
-        table.version = newVersion;
+        table.partitions.addAll(newPartitions);
 
-        LOGGER.debug("statement=DELETE table={} rowsDeleted={} partitionsRewritten={} version={}",
-                tableName, rowsDeleted, replacements.size(), table.version);
+        long durationMs = System.currentTimeMillis() - startMs;
+        LOGGER.debug("statement=DELETE table={} rowsDeleted={} affectedPartitions newPartitions={} version={} durationMs={}",
+                tableName, rowsDeleted, affectedPartitions.size(), newPartitions.size(), table.version, durationMs);
         return rowsDeleted;
     }
 
@@ -279,8 +292,7 @@ public final class StorageEngine {
 
     /**
      * Reads all rows from one partition without applying a predicate.
-     * Partition selection belongs to the planner; row filtering belongs to a
-     * FilterOperator.
+     * Partition selection belongs to the planner; row filtering belongs to a FilterOperator.
      * @param tableName the name of the table
      * @param partition the partition metadata to read
      */
@@ -332,6 +344,7 @@ public final class StorageEngine {
 
     /**
      * Returns the table's partition metadata without reading partition data.
+     * @param tableName the name of the table
      */
     public List<PartitionMeta> partitions(Catalog catalog, String tableName) {
         requireNonNull(tableName);
@@ -346,7 +359,8 @@ public final class StorageEngine {
     }
 
     /**
-     * Returns the catalog for a SELECT query. If the catalog file does not exist, it creates an empty catalog and returns that.
+     * Returns the catalog for statement execution.
+     * If the catalog file does not exist, it creates an empty catalog and returns that.
      */
     public Catalog openCatalog() {
         assert !catalogState.isOpen() : "a catalog is already open; close it before opening again";
@@ -356,12 +370,19 @@ public final class StorageEngine {
         return readOrCreateEmptyCatalog();
     }
 
+    /**
+     * Marks the catalog as dirty, indicating that it has been modified and needs to be committed.
+     * This method must be called before any modifications are made to the catalog.
+     */
     private void markCatalog() {
         assert catalogState == CatalogState.OPEN_CLEAN : "catalog is not open or already dirty; cannot mark dirty";
 
         catalogState = CatalogState.OPEN_DIRTY;
     }
 
+    /**
+     * Closes the catalog, committing any changes if it was marked as dirty.
+     */
     public void closeCatalog(Catalog catalog) {
         assert catalogState.isOpen() : "catalog is not open; cannot close";
 
@@ -488,7 +509,7 @@ public final class StorageEngine {
     }
 
     void writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
-        String fname = tableName + "-part-" + partitionIdx + ".bin";
+        String fname = partitionFileName(tableName, partitionIdx);
         PartitionMeta partition = writePartitionFile(tableName, table, rows, fname);
         table.partitions.add(partition);
     }
@@ -721,6 +742,7 @@ public final class StorageEngine {
 
     public static final class TableMeta {
         public int version = 0;
+        public int nextPartitionNumber = 0;
         public final List<ColumnSpec> columns = new ArrayList<>();
         public final List<PartitionMeta> partitions = new ArrayList<>();
 

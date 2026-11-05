@@ -70,7 +70,7 @@ public final class Binder {
         List<String> schemaNames = schema.stream().map(ColumnSpec::name).toList();
 
         for (String column : select.columns()) {
-            if (!schemaNames.stream().anyMatch(column::equals))
+            if (schemaNames.stream().noneMatch(column::equals))
                 throw new IllegalArgumentException("unknown column: " + column);
         }
 

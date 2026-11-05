@@ -318,7 +318,6 @@ class StorageEngineIT {
         ex.executeScript("CREATE TABLE t (city STRING, distance LONG, price DOUBLE);");
         assertTableVersion(++version, e, "t");
         
-
         ex.executeScript("COPY t FROM '" + resource("trips.csv") + "';");
         assertTableVersion(++version, e, "t");
         assertEquals(tripsSize, ex.executeScript("SELECT * FROM t;").getFirst().size());
@@ -330,10 +329,13 @@ class StorageEngineIT {
         assertTableVersion(++version, e, "t");
         assertEquals(newTripsSize, ex.executeScript("SELECT * FROM t;").getFirst().size());
         
-
         ex.executeScript("DELETE FROM t WHERE city = 'Copenhagen';");
         assertTableVersion(++version, e, "t");
         assertEquals(newTripsSize - newAmountCopenhagenInTrips, ex.executeScript("SELECT * FROM t;").getFirst().size());
+
+        ex.executeScript("DELETE FROM t;");
+        assertTableVersion(++version, e, "t");
+        assertEquals(0, ex.executeScript("SELECT * FROM t;").getFirst().size());
     }
 
     @Test
@@ -354,6 +356,7 @@ class StorageEngineIT {
         ex.executeScript("DELETE FROM trips WHERE distance > 150;");
 
         StorageEngine.TableMeta table = e.viewCatalogForTesting().tables.get("trips");
+
         // partions 0 and 1 are pruned, 2 and 3 are rewritten.
         assertEquals(2, table.version);
         assertNull(table.partitions.get(0).deprecatedSince);
