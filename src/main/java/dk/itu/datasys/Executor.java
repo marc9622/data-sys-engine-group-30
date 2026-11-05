@@ -94,7 +94,6 @@ public final class Executor {
 
     public List<Object[]> executeSelect(Catalog catalog, Statement.Select select) {
         long planningStart = System.nanoTime();
-        long startMs = System.currentTimeMillis();
 
         Plan plan = Utils.logExceptions(LOGGER, "failed to make plan", () ->
             planner.plan(catalog, select));
@@ -118,9 +117,6 @@ public final class Executor {
             Utils.logExceptions(LOGGER, "failed to close operations", () ->
                 root.close());
         }
-
-        long durationMs = System.currentTimeMillis() - startMs;
-        LOGGER.debug("query complete rows={} durationMs={}", rows.size(), durationMs);
 
         double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
         
