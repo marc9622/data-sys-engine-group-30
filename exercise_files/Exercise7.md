@@ -82,12 +82,12 @@ This creates a tag that the teaching assistant will check out to validate your p
 
 ## Definition of done
 
-- [ ] `docs/transactions-design.md` merged, all design questions answered.
-- [ ] `DELETE` runs end to end through the front door; no partition is ever modified in place.
-- [ ] Catalog versioned; commits atomic; `SELECT` reads the last committed version; `version=N` on every summary log line.
-- [ ] Repeated `COPY` into one table works and increments the version.
-- [ ] All required tests green in CI; PRs reviewed.
-- [ ] Tag `v0.7` is pushed.
+- [x] `docs/transactions-design.md` merged, all design questions answered.
+- [x] `DELETE` runs end to end through the front door; no partition is ever modified in place.
+- [x] Catalog versioned; commits atomic; `SELECT` reads the last committed version; `version=N` on every summary log line.
+- [x] Repeated `COPY` into one table works and increments the version.
+- [x] All required tests green in CI; PRs reviewed.
+- [x] Tag `v0.7` is pushed.
 
 ## Outlook
 
