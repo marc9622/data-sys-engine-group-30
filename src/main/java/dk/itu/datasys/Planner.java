@@ -28,7 +28,7 @@ public final class Planner {
         Objects.requireNonNull(select, "select");
 
         String tableName = select.tableName();
-        List<StorageEngine.PartitionMeta> allPartitions = engine.partitions(catalog, tableName);
+        List<StorageEngine.PartitionMeta> allPartitions = engine.activePartitions(catalog, tableName);
         List<StorageEngine.PartitionMeta> survivingPartitions = new ArrayList<>();
 
         if (select.where().isEmpty()) {

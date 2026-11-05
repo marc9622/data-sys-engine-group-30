@@ -36,7 +36,7 @@ class OperatorTest {
         StorageEngine engine = createPartitionedEngine(tempDir);
         Catalog catalog = engine.viewCatalogForTesting();
 
-        List<StorageEngine.PartitionMeta> partitions = engine.partitions(catalog, tripsName);
+        List<StorageEngine.PartitionMeta> partitions = engine.activePartitions(catalog, tripsName);
         List<StorageEngine.PartitionMeta> selectedPartitions = partitions.subList(1, 3);
 
         // Choose rows 2,3,4,5 for assertion(rows in partiotion 1 and 2) 

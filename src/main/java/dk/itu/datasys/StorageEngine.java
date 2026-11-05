@@ -189,9 +189,8 @@ public final class StorageEngine {
                 }
             }
 
-            if (!buffer.isEmpty()) {
+            if (!buffer.isEmpty())
                 writePartition(tableName, table, buffer, table.nextPartitionNumber++);
-            }
 
         } catch (IOException e) {
             throw new RuntimeException("io error copying file", e);
@@ -228,14 +227,15 @@ public final class StorageEngine {
                 .map(p -> columnIndex(schema, p.columnName()))
                 .orElse(-1);
 
-        List<PartitionMeta> affectedPartitions = new ArrayList<>();
-        List<PartitionMeta> newPartitions = new ArrayList<>();
+        int partitionsDeprecated = 0;
+        List<Object[]> buffer = new ArrayList<>(maxRowsPerPartition);
 
         int rowsDeleted = 0;
+        int previousNextPartitionNumber = table.nextPartitionNumber;
         int previousVersion = table.version;
         table.version++;
 
-        for (PartitionMeta partition : partitions(catalog, tableName)) {
+        for (PartitionMeta partition : activePartitions(catalog, tableName)) {
             boolean mayContain = predicate.isEmpty()
                     || partitionMayContain(
                             partition.mins.get(predicateColumn),
@@ -248,7 +248,7 @@ public final class StorageEngine {
             if (!mayContain)
                 continue;
 
-            List<Object[]> keptRows = new ArrayList<>();
+            boolean anyDeleted = false;
             for (Object[] row : readPartitionRows(catalog, tableName, partition)) {
                 boolean matches = predicate.isEmpty()
                         || predicate.get().matches(
@@ -256,29 +256,33 @@ public final class StorageEngine {
                                 schema.get(predicateColumn).type()
                             );
 
-                if (matches)
+                if (matches) {
+                    anyDeleted = true;
                     rowsDeleted++;
-                else
-                    keptRows.add(row);
+                    continue;
+                }
+
+                buffer.add(row);
+                if (buffer.size() == maxRowsPerPartition) {
+                    writePartition(tableName, table, buffer, table.nextPartitionNumber++);
+                    buffer.clear();
+                }
             }
 
-            if (keptRows.size() < partition.rowCount)
-                affectedPartitions.add(partition);
-
-            if (!keptRows.isEmpty()) {
-                String fileName = partitionFileName(tableName, table.nextPartitionNumber++);
-                newPartitions.add(writePartitionFile(tableName, table, keptRows, fileName));
+            if (anyDeleted) {
+                partition.markDeprecated(previousVersion);
+                partitionsDeprecated++;
             }
         }
 
-        for (PartitionMeta partition : affectedPartitions)
-            partition.markDeprecated(previousVersion);
+        if (rowsDeleted >= 1 && !buffer.isEmpty())
+            writePartition(tableName, table, buffer, table.nextPartitionNumber++);
 
-        table.partitions.addAll(newPartitions);
+        int partitionsWritten = table.nextPartitionNumber - previousNextPartitionNumber;
 
         long durationMs = System.currentTimeMillis() - startMs;
-        LOGGER.debug("statement=DELETE table={} rowsDeleted={} affectedPartitions newPartitions={} version={} durationMs={}",
-                tableName, rowsDeleted, affectedPartitions.size(), newPartitions.size(), table.version, durationMs);
+        LOGGER.debug("statement=DELETE table={} rowsDeleted={} affectedPartitions={} newPartitions={} version={} durationMs={}",
+                tableName, rowsDeleted, partitionsDeprecated, partitionsWritten, table.version, durationMs);
         return rowsDeleted;
     }
 
@@ -346,7 +350,7 @@ public final class StorageEngine {
      * Returns the table's partition metadata without reading partition data.
      * @param tableName the name of the table
      */
-    public List<PartitionMeta> partitions(Catalog catalog, String tableName) {
+    public List<PartitionMeta> activePartitions(Catalog catalog, String tableName) {
         requireNonNull(tableName);
 
         TableMeta table = catalog.tables.get(tableName);
@@ -354,8 +358,8 @@ public final class StorageEngine {
             throw new IllegalArgumentException("unknown table: " + tableName);
 
         return table.partitions.stream()
-                .filter(partition -> partition.deprecatedSince == null)
-                .toList();
+            .filter(partition -> partition.deprecatedSince == null)
+            .toList();
     }
 
     /**
@@ -508,10 +512,11 @@ public final class StorageEngine {
         };
     }
 
-    void writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
-        String fname = partitionFileName(tableName, partitionIdx);
-        PartitionMeta partition = writePartitionFile(tableName, table, rows, fname);
+    PartitionMeta writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
+        String name = partitionFileName(tableName, partitionIdx);
+        PartitionMeta partition = writePartitionFile(tableName, table, rows, name);
         table.partitions.add(partition);
+        return partition;
     }
 
     private PartitionMeta writePartitionFile(String tableName, TableMeta table, List<Object[]> rows, String fname) {

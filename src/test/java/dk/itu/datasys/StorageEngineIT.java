@@ -402,11 +402,25 @@ class StorageEngineIT {
 
         ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
         ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        // This should not match any rows; keep current partition
+        ex.executeScript("DELETE FROM trips WHERE city = 'Berlin';");
+
+        Catalog catalog1 = e.viewCatalogForTesting();
+        StorageEngine.TableMeta table1 = catalog1.tables.get("trips");
+
+        assertEquals(1, table1.partitions.size());
+        assertEquals(1, e.activePartitions(catalog1, "trips").size());
+        assertEquals(tripsRows.size(), ex.executeScript("SELECT * FROM trips;").getFirst().size());
+
+        // This should delete all rows; no partition should be created
         ex.executeScript("DELETE FROM trips;");
 
-        StorageEngine.TableMeta table = e.viewCatalogForTesting().tables.get("trips");
-        assertEquals(1, table.partitions.size());
-        assertEquals(0, e.partitions(e.viewCatalogForTesting(), "trips").size());
+        Catalog catalog2 = e.viewCatalogForTesting();
+        StorageEngine.TableMeta table2 = catalog2.tables.get("trips");
+
+        assertEquals(1, table2.partitions.size());
+        assertEquals(0, e.activePartitions(catalog2, "trips").size());
         assertFalse(Files.exists(tmp.resolve(tripsPartitionName(1))));
         assertEquals(0, ex.executeScript("SELECT * FROM trips;").getFirst().size());
     }
