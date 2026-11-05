@@ -16,19 +16,12 @@ Since each statements keeps its pinned catalog in memory, it is therby fine to o
 
 # The rewrite set:
 
-For `DELETE`, active partitions are divided using the same min/max
-`partitionMayContain` helper as query pruning. Partitions that cannot contain a
-match are carried over by reference. Candidate partitions are read, filtered,
-and written as new partitions with fresh metadata; the original files are not
-overwritten. Replaced metadata is retained as deprecated history, while normal
-scans expose only active partitions.
+A `partitionMayContain` has been added to `StorageEngine`, and is used both by the `Planner` and for deletion.
+All partitions without deleted partitions are left unaffected and remain in the catalog.
 
 # New version:
 
-After every candidate has been rewritten successfully, the table version is
-incremented and the catalog is atomically replaced. If writing a replacement
-fails, table metadata is not changed. A crash after replacement files are
-written but before the catalog commit leaves those files orphaned and invisible.
+A delete statement that doesn't match any rows leave the partitions unchanged, but it still increments the version number and creates a new catalog file.
 
 # Partition placement:
 
