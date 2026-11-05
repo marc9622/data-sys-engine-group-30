@@ -21,6 +21,11 @@ class SqlPrinterTest {
 
         Statement selectWithoutWhere = Statement.select("trips").columns("city", "price").statement();
 
+        Statement deleteWithWhere = Statement.delete("trips")
+                .where("distance", Comparison.GREATER_THAN, 100L)
+                .statement();
+        Statement deleteWithoutWhere = Statement.delete("trips").statement();
+
         SqlPrinter printer = new SqlPrinter();
 
         assertEquals("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);",
@@ -31,6 +36,10 @@ class SqlPrinterTest {
                 printer.print(selectWithWhere));
         assertEquals("SELECT city, price FROM trips;",
                 printer.print(selectWithoutWhere));
+        assertEquals("DELETE FROM trips WHERE distance > 100;",
+                printer.print(deleteWithWhere));
+        assertEquals("DELETE FROM trips;",
+                printer.print(deleteWithoutWhere));
     }
 
     @Test
@@ -42,7 +51,9 @@ class SqlPrinterTest {
                 Statement.createTable("trips").addColumns(tripsColumns).statement(),
                 Statement.copy("trips", "trips.csv"),
                 Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(),
-                Statement.select("trips").columns("city", "price").statement());
+                Statement.select("trips").columns("city", "price").statement(),
+                Statement.delete("trips").statement(),
+                Statement.delete("trips").where("distance", Comparison.GREATER_THAN, 100L).statement());
 
         for (Statement statement : statements) {
             assertEquals(statement, parser.parse(printer.print(statement)).getFirst());

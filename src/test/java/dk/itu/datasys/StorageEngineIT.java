@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.Catalog;
+import dk.itu.datasys.TestingUtils.Streams;
 
 class StorageEngineIT {
 
@@ -298,6 +299,98 @@ class StorageEngineIT {
 
         ex.executeScript("SELECT * FROM t WHERE distance > 100;");
         assertTableVersion(version, e, "t");
+    }
+
+    @Test
+    void deleteCommitsVersionAndSelectSeesEachCommit(@TempDir Path tmp) {
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+
+        int tripsSize = parseCsvFile(resource("trips.csv")).size();
+
+        int amountCopenhagenInTrips = (int) parseCsvFile(resource("trips.csv")).stream()
+            .filter(r -> r[0].equals("Copenhagen"))
+            .count();
+
+        int version = -1;
+
+        ex.executeScript("CREATE TABLE t (city STRING, distance LONG, price DOUBLE);");
+        assertTableVersion(++version, e, "t");
+        
+
+        ex.executeScript("COPY t FROM '" + resource("trips.csv") + "';");
+        assertTableVersion(++version, e, "t");
+        assertEquals(tripsSize, ex.executeScript("SELECT * FROM t;").getFirst().size());
+        
+        int newTripsSize = tripsSize * 2;
+        int newAmountCopenhagenInTrips = amountCopenhagenInTrips * 2;
+
+        ex.executeScript("COPY t FROM '" + resource("trips.csv") + "';");
+        assertTableVersion(++version, e, "t");
+        assertEquals(newTripsSize, ex.executeScript("SELECT * FROM t;").getFirst().size());
+        
+
+        ex.executeScript("DELETE FROM t WHERE city = 'Copenhagen';");
+        assertTableVersion(++version, e, "t");
+        assertEquals(newTripsSize - newAmountCopenhagenInTrips, ex.executeScript("SELECT * FROM t;").getFirst().size());
+    }
+
+    @Test
+    void deleteRewriteSetOnlyRewritesMatchingPartitions(@TempDir Path tmp) {
+        System.setProperty("maxRowsPerPartition", "2");
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips_sorted.csv") + "';");
+
+        List<String> originalFiles = e.viewCatalogForTesting().tables.get("trips").partitions.stream()
+                .map(partition -> partition.fileName)
+                .toList();
+        assertEquals(List.of("trips-part-0.bin", "trips-part-1.bin",
+                "trips-part-2.bin", "trips-part-3.bin"), originalFiles);
+
+        ex.executeScript("DELETE FROM trips WHERE distance > 150;");
+
+        StorageEngine.TableMeta table = e.viewCatalogForTesting().tables.get("trips");
+        // partions 0 and 1 are pruned, 2 and 3 are rewritten.
+        assertEquals(2, table.version);
+        assertNull(table.partitions.get(0).deprecatedSince);
+        assertNull(table.partitions.get(1).deprecatedSince);
+        assertEquals(1, table.partitions.get(2).deprecatedSince);
+        assertEquals(1, table.partitions.get(3).deprecatedSince);
+
+        // The originals files stil exits but two new files are created for the rewritten partitions.
+        assertEquals(6, table.partitions.size());
+        assertEquals(originalFiles.get(0), table.partitions.get(0).fileName);
+        assertEquals(originalFiles.get(1), table.partitions.get(1).fileName);
+        assertEquals(originalFiles.get(2), table.partitions.get(2).fileName);
+        assertEquals(originalFiles.get(3), table.partitions.get(3).fileName);
+        assertEquals("trips-part-4.bin", table.partitions.get(4).fileName);
+        assertEquals("trips-part-5.bin", table.partitions.get(5).fileName);
+
+        List<Object[]> rows = ex.executeScript("SELECT * FROM trips;").getFirst();
+        assertEquals(5, rows.size());
+        assertTrue(rows.stream().allMatch(row -> (Long) row[1] <= 150));
+    }
+
+    @Test
+    void freshEngineSeesPostDeleteVersion(@TempDir Path tmp) {
+        StorageEngine first = new StorageEngine(tmp);
+        Executor firstExecutor = new Executor(first);
+
+        firstExecutor.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        firstExecutor.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+        // delete rows with distance > 200, 6 rows should remain
+        firstExecutor.executeScript("DELETE FROM trips WHERE distance > 200;");
+
+        assertTableVersion(2, first, "trips");
+
+        StorageEngine fresh = new StorageEngine(tmp);
+        assertTableVersion(2, fresh, "trips");
+        List<Object[]> rows = new Executor(fresh).executeScript("SELECT * FROM trips;").getFirst();
+        assertEquals(6, rows.size());
+        assertTrue(rows.stream().allMatch(row -> (Long) row[1] <= 200));
     }
 
     void assertTableVersion(int expected, StorageEngine engine, String tableName) {

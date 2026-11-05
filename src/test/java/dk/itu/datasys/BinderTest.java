@@ -69,4 +69,26 @@ class BinderTest {
                     .addColumn("a", ColumnType.LONG)
                     .statement()));
     }
+
+    @Test
+    void invalidDeleteStatementsThrow(@TempDir Path tempDir) {
+        StorageEngine engine = new StorageEngine(tempDir);
+        createTableWithCatalog(engine, "trips", tripsColumns);
+
+        Binder binder = new Binder(engine);
+
+        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+                engine.viewCatalogForTesting(),
+                Statement.delete("missing").statement()));
+        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+                engine.viewCatalogForTesting(),
+                Statement.delete("trips")
+                        .where("missing", Comparison.EQUALS, 10L)
+                        .statement()));
+        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+                engine.viewCatalogForTesting(),
+                Statement.delete("trips")
+                        .where("distance", Comparison.EQUALS, "not a long")
+                        .statement()));
+    }
 }
