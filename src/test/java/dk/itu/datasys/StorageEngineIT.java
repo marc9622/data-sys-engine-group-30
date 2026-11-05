@@ -3,6 +3,7 @@ package dk.itu.datasys;
 import static dk.itu.datasys.TestingUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -360,14 +361,13 @@ class StorageEngineIT {
         assertEquals(1, table.partitions.get(2).deprecatedSince);
         assertEquals(1, table.partitions.get(3).deprecatedSince);
 
-        // The originals files stil exits but two new files are created for the rewritten partitions.
-        assertEquals(6, table.partitions.size());
+        // The originals files still exist and only the non-empty rewrite is added.
+        assertEquals(5, table.partitions.size());
         assertEquals(originalFiles.get(0), table.partitions.get(0).fileName);
         assertEquals(originalFiles.get(1), table.partitions.get(1).fileName);
         assertEquals(originalFiles.get(2), table.partitions.get(2).fileName);
         assertEquals(originalFiles.get(3), table.partitions.get(3).fileName);
         assertEquals("trips-part-4.bin", table.partitions.get(4).fileName);
-        assertEquals("trips-part-5.bin", table.partitions.get(5).fileName);
 
         List<Object[]> rows = ex.executeScript("SELECT * FROM trips;").getFirst();
         assertEquals(5, rows.size());
@@ -391,6 +391,23 @@ class StorageEngineIT {
         List<Object[]> rows = new Executor(fresh).executeScript("SELECT * FROM trips;").getFirst();
         assertEquals(6, rows.size());
         assertTrue(rows.stream().allMatch(row -> (Long) row[1] <= 200));
+    }
+
+    @Test
+    void deleteDoesNotCreateEmptyReplacementPartition(@TempDir Path tmp) {
+        System.setProperty("maxRowsPerPartition", "100");
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+        ex.executeScript("DELETE FROM trips;");
+
+        StorageEngine.TableMeta table = e.viewCatalogForTesting().tables.get("trips");
+        assertEquals(1, table.partitions.size());
+        assertEquals(0, e.partitions(e.viewCatalogForTesting(), "trips").size());
+        assertFalse(Files.exists(tmp.resolve("trips-part-1.bin")));
+        assertEquals(0, ex.executeScript("SELECT * FROM trips;").getFirst().size());
     }
 
     void assertTableVersion(int expected, StorageEngine engine, String tableName) {

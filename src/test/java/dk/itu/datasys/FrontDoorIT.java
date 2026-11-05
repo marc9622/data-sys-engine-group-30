@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -70,16 +71,19 @@ class FrontDoorIT {
         
         String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String[] lines = stdout.split(System.lineSeparator());
-
      
-        assertEquals(10, lines.length);
         List<String> expected = tripsRows.stream()
                 .filter(row -> !row[0].equals("Copenhagen"))
                 .map(row -> "%s,%s,%s".formatted(row[0], row[1], row[2]))
                 .flatMap(row -> java.util.stream.Stream.of(row, row))
+                .sorted()
                 .toList();
-    
-        assertEquals(String.join(System.lineSeparator(), expected) + System.lineSeparator(), stdout);
+
+        List<String> actual = Stream.of(lines)
+                .sorted()
+                .toList();
+        
+        assertEquals(expected, actual);
     }
 
     @Test

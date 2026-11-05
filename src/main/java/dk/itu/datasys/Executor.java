@@ -114,13 +114,15 @@ public final class Executor {
         ExecuteQueryResult result = executeQuery(catalog, delete.getMatchingSelect());
 
         long deletionStart = System.nanoTime();
+        int rowsDeleted = engine.deleteFromTable(catalog, delete.tableName(), delete.where());
 
         double deletionMs = (System.nanoTime() - deletionStart) / 1_000_000.0;
 
         double elapsedMs = result.planningMs + result.executionMs + deletionMs;
 
         LOGGER.debug("statement=DELETE table={} rowsDeleted={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-                 delete.tableName(), result.rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), result.tableVersion, elapsedMs);
+                 delete.tableName(), rowsDeleted, lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(),
+                 result.tableVersion + 1, elapsedMs);
         LOGGER.debug("delete planningMs={} executionMs={} deletionMs={} elapsedMs={}",
                 result.planningMs, result.executionMs, deletionMs, elapsedMs);
     }

@@ -200,6 +200,84 @@ public final class StorageEngine {
     }
 
     /**
+     * Deletes rows using copy-on-write. Active partitions that cannot contain a
+     * match are carried over by reference; candidate partitions are replaced by
+     * newly written partitions and the old metadata is retained as deprecated
+     * history.
+     */
+    public int deleteFromTable(Catalog catalog, String tableName, Optional<Statement.Predicate> predicate) {
+        markCatalog();
+
+        requireNonNull(tableName);
+        requireNonNull(predicate);
+
+        TableMeta table = catalog.tables.get(tableName);
+        if (table == null)
+            throw new IllegalArgumentException("unknown table: " + tableName);
+
+        List<ColumnSpec> schema = table.columns;
+        int predicateColumn = predicate
+                .map(p -> columnIndex(schema, p.columnName()))
+                .orElse(-1);
+        List<PartitionMeta> activePartitions = partitions(catalog, tableName);
+        List<PartitionMeta> candidates = new ArrayList<>();
+        List<PartitionMeta> replacements = new ArrayList<>();
+        int rowsDeleted = 0;
+        int nextPartitionNumber = table.partitions.size();
+        int previousVersion = table.version;
+        int newVersion = previousVersion + 1;
+
+        for (PartitionMeta partition : activePartitions) {
+            boolean mayContain = predicate.isEmpty() || partitionMayContain(
+                    partition.mins.get(predicateColumn),
+                    partition.maxs.get(predicateColumn),
+                    predicate.get().comparison(),
+                    predicate.get().constant(),
+                    schema.get(predicateColumn).type());
+
+            if (!mayContain) {
+                continue;
+            }
+            candidates.add(partition);
+
+            List<Object[]> keptRows = new ArrayList<>();
+            for (Object[] row : readPartitionRows(catalog, tableName, partition)) {
+                boolean matches = predicate.isEmpty()
+                        || predicate.get().matches(row[predicateColumn], schema.get(predicateColumn).type());
+                if (matches) {
+                    rowsDeleted++;
+                }
+                else {
+                    keptRows.add(row);
+                }
+            }
+
+            if (!keptRows.isEmpty()) {
+                String fileName = tableName + "-part-" + nextPartitionNumber++ + ".bin";
+                replacements.add(writePartitionFile(tableName, table, keptRows, fileName));
+            }
+        }
+
+        for (PartitionMeta partition : candidates)
+            partition.markDeprecated(previousVersion);
+
+        table.partitions.addAll(replacements);
+        table.version = newVersion;
+
+        LOGGER.debug("statement=DELETE table={} rowsDeleted={} partitionsRewritten={} version={}",
+                tableName, rowsDeleted, replacements.size(), table.version);
+        return rowsDeleted;
+    }
+
+    private static int columnIndex(List<ColumnSpec> schema, String columnName) {
+        for (int index = 0; index < schema.size(); index++) {
+            if (schema.get(index).name().equals(columnName))
+                return index;
+        }
+        throw new IllegalArgumentException("unknown column: " + columnName);
+    }
+
+    /**
      * Reads all rows from one partition without applying a predicate.
      * Partition selection belongs to the planner; row filtering belongs to a
      * FilterOperator.
@@ -262,7 +340,9 @@ public final class StorageEngine {
         if (table == null)
             throw new IllegalArgumentException("unknown table: " + tableName);
 
-        return List.copyOf(table.partitions);
+        return table.partitions.stream()
+                .filter(partition -> partition.deprecatedSince == null)
+                .toList();
     }
 
     /**
@@ -409,6 +489,11 @@ public final class StorageEngine {
 
     void writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
         String fname = tableName + "-part-" + partitionIdx + ".bin";
+        PartitionMeta partition = writePartitionFile(tableName, table, rows, fname);
+        table.partitions.add(partition);
+    }
+
+    private PartitionMeta writePartitionFile(String tableName, TableMeta table, List<Object[]> rows, String fname) {
         Path out = dataDir.resolve(fname);
         try (DataOutputStream outp = new DataOutputStream(new FileOutputStream(out.toFile()))) {
             int rowsCount = rows.size();
@@ -431,16 +516,15 @@ public final class StorageEngine {
                 writePartitionColumn(outp, t, rows, c);
             }
 
-            // record partition meta
             PartitionMeta pm = new PartitionMeta(fname, mins, maxs, rowsCount);
-            table.partitions.add(pm);
 
             // log per-column min/max
             for (int c = 0; c < table.columns.size(); c++) {
                 String col = table.columns.get(c).name();
-                LOGGER.debug("table={} partition={} column={} min={} max={}", tableName, partitionIdx, col, mins.get(c), maxs.get(c));
+                LOGGER.debug("table={} partition={} column={} min={} max={}", tableName, fname, col, mins.get(c), maxs.get(c));
             }
 
+            return pm;
         } catch (IOException e) {
             throw new RuntimeException("failed writing partition", e);
         }
