@@ -77,15 +77,15 @@ class BinderTest {
 
         Binder binder = new Binder(engine);
 
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                 engine.viewCatalogForTesting(),
                 Statement.delete("missing").statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                 engine.viewCatalogForTesting(),
                 Statement.delete("trips")
                         .where("missing", Comparison.EQUALS, 10L)
                         .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                 engine.viewCatalogForTesting(),
                 Statement.delete("trips")
                         .where("distance", Comparison.EQUALS, "not a long")

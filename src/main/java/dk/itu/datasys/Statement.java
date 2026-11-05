@@ -130,7 +130,7 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
 
         @Override
         public String toString() {
-            return "Delete[columns=" + " tableName=" + tableName + " where=" + where + "]";
+            return "Delete[tableName=" + tableName + " where=" + where + "]";
         }
 
         public static class Builder {
