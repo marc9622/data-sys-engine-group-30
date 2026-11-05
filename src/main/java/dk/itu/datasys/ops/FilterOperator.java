@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.Predicate;
+import dk.itu.datasys.StorageEngine.Row;
 
 public final class FilterOperator extends Operator.RowWiseIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
@@ -37,9 +38,9 @@ public final class FilterOperator extends Operator.RowWiseIntermediate {
     }
 
     @Override
-    protected NextResult nextIntermediate(Object[] row) {
+    protected NextResult nextIntermediate(Row row) {
         rowsIn++;
-        if (predicate.matches(row[columnIndex], columnType)) {
+        if (predicate.matches(row.data()[columnIndex], columnType)) {
             rowsOut++;
             return NextResult.of(row);
         }

@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import dk.itu.datasys.Spec.ColumnSpec;
 import dk.itu.datasys.StorageEngine;
 import dk.itu.datasys.StorageEngine.Catalog;
+import dk.itu.datasys.StorageEngine.Row;
 
 public final class ScanOperator implements Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(ScanOperator.class);
@@ -21,7 +22,7 @@ public final class ScanOperator implements Operator {
     private final List<StorageEngine.PartitionMeta> partitions;
     private int nextPartitionIndex;
     private int rowsOut;
-    private Iterator<Object[]> rows;
+    private Iterator<Row> rows;
 
     public ScanOperator(StorageEngine engine, Catalog catalog, String tableName, List<StorageEngine.PartitionMeta> partitions) {
         this.engine = Objects.requireNonNull(engine);
@@ -43,7 +44,7 @@ public final class ScanOperator implements Operator {
     }
 
     @Override
-    public Object[] next() {
+    public Row next() {
         while (!rows.hasNext()) {
             if (nextPartitionIndex >= partitions.size())
                 return null;

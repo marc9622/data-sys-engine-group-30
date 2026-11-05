@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import dk.itu.datasys.StorageEngine.Catalog;
+import dk.itu.datasys.StorageEngine.Row;
 import dk.itu.datasys.StorageEngine.ScanStats;
 import dk.itu.datasys.StorageEngine.TableMeta;
 import dk.itu.datasys.ops.Operator;
@@ -107,7 +108,7 @@ public final class Executor {
         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
                 result.planningMs, result.executionMs, elapsedMs);
                 
-        return result.rows;
+        return result.rows.stream().map(Row::data).toList();
     }
 
     public void executeDelete(Catalog catalog, Statement.Delete delete) {
@@ -125,7 +126,7 @@ public final class Executor {
                 result.planningMs, result.executionMs, deletionMs, elapsedMs);
     }
 
-    public static record ExecuteQueryResult(List<Object[]> rows, int tableVersion, double planningMs, double executionMs) {}
+    public static record ExecuteQueryResult(List<Row> rows, int tableVersion, double planningMs, double executionMs) {}
 
     public ExecuteQueryResult executeQuery(Catalog catalog, Statement.Select select) {
         long planningStart = System.nanoTime();
@@ -140,7 +141,7 @@ public final class Executor {
         long executionStart = System.nanoTime();
 
         Operator root = plan.root();
-        List<Object[]> rows = new ArrayList<>();
+        List<Row> rows = new ArrayList<>();
 
         Utils.logExceptions(LOGGER, "failed to open operations", () ->
             root.open());

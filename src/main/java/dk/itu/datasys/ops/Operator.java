@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.StorageEngine;
+import dk.itu.datasys.StorageEngine.Row;
 
 public interface Operator {
 
@@ -22,7 +24,7 @@ public interface Operator {
     /**
      * @return The next row in schema column order, or null when exhausted
      */
-    Object[] next();
+    Row next();
 
     /**
      * Frees any resources held by the operator.
@@ -31,14 +33,14 @@ public interface Operator {
     void close();
 
 
-    default List<Object[]> exhaust() {
-        List<Object[]> rows = new ArrayList<>();
+    default List<Row> exhaust() {
+        List<Row> rows = new ArrayList<>();
         exhaust(rows);
         return rows;
     }
 
-    default void exhaust(List<Object[]> rows) {
-        for (Object[] row; (row = next()) != null;)
+    default void exhaust(List<Row> rows) {
+        for (Row row; (row = next()) != null;)
             rows.add(row);
     }
 
@@ -63,31 +65,31 @@ public interface Operator {
         }
 
         protected static sealed interface NextResult permits NextResult.Row, NextResult.Retry, NextResult.Exhausted {
-            public static final record Row(Object[] row) implements NextResult {}
+            public static final record Row(StorageEngine.Row row) implements NextResult {}
             public static final class Retry implements NextResult {}
             public static final class Exhausted implements NextResult {}
 
-            public static NextResult of(Object[] row) { return new Row(row); }
+            public static NextResult of(StorageEngine.Row row) { return new Row(row); }
             public static NextResult retry = new Retry();
             public static NextResult exhausted = new Exhausted();
         }
 
         @Override
-        public final Object[] next() {
+        public final Row next() {
             while (true) {
-                Object[] childRow = child.next();
+                Row childRow = child.next();
                 if (childRow == null)
                     return null;
 
                 switch (nextIntermediate(childRow)) {
-                    case NextResult.Row(Object[] row) -> { return row; }
+                    case NextResult.Row(StorageEngine.Row row) -> { return row; }
                     case NextResult.Retry _ -> { continue; }
                     case NextResult.Exhausted _ -> { return null; }
                 }
             }
         }
 
-        protected abstract NextResult nextIntermediate(Object[] childNext);
+        protected abstract NextResult nextIntermediate(Row childNext);
 
         @Override
         public final void close() {
@@ -101,7 +103,7 @@ public interface Operator {
     public static abstract class ExhaustIntermediate implements Operator {
         private final Operator child;
 
-        private List<Object[]> rows;
+        private List<Row> rows;
         private int rowCurrent;
 
         protected ExhaustIntermediate(Operator child) {
@@ -115,7 +117,7 @@ public interface Operator {
             rowCurrent = 0;
         }
 
-        protected abstract List<Object[]> openAndExhaustIntermediate(List<ColumnSpec> childSchema, List<Object[]> childRows);
+        protected abstract List<Row> openAndExhaustIntermediate(List<ColumnSpec> childSchema, List<Row> childRows);
 
         @Override
         public List<ColumnSpec> schema() {
@@ -123,7 +125,7 @@ public interface Operator {
         }
 
         @Override
-        public final Object[] next() {
+        public final Row next() {
             if (rowCurrent == rows.size())
                 return null;
 

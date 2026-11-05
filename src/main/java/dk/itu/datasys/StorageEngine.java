@@ -32,7 +32,11 @@ public final class StorageEngine {
     private static final String catalogLockFileName = "catalog.lock";
     private static String tempCatalogFileName() {
         int random = ThreadLocalRandom.current().nextInt(0, 10000);
-        return "catalog_temp_" + String.format("%04d", random) + ".json";
+        return "catalog-temp-" + String.format("%04d", random) + ".json";
+    }
+
+    public static String partitionFileName(String tableName, int index) {
+        return tableName + "-part-" + index + ".bin";
     }
 
     private enum CatalogState {
@@ -66,6 +70,65 @@ public final class StorageEngine {
             Files.createDirectories(dataDir);
         } catch (IOException e) {
             throw new RuntimeException("cannot create data dir: " + dataDir, e);
+        }
+    }
+
+    public static record Row(Object[] data, Optional<Location> location) {
+        public static record Location(String partitionName, int index) {
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof Location that)) return false;
+                return index == that.index &&
+                       Objects.equals(partitionName, that.partitionName);
+            }
+
+            @Override
+            public String toString() {
+                return "Location[partitionName=" + partitionName + " index=" + index + "]";
+            }
+        }
+
+        public Row withData(Object[] newData) {
+            return new Row(newData, location);
+        }
+
+        public static Row of(Object[] data, String partitionName, int index) {
+            return new Row(data, Optional.of(new Location(partitionName, index)));
+        }
+
+        public static Row ofEphemeral(Object[] data) {
+            return new Row(data, null);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Row that)) return false;
+
+            return Arrays.equals(data, that.data) &&
+                   Objects.equals(location, that.location);
+        }
+
+        public boolean dataEquals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Row that)) return false;
+
+            return Arrays.equals(data, that.data);
+        }
+
+        @Override
+        public String toString() {
+            return "Row[data=" + dataToArrayString(data) + " location=" + location + "]";
+        }
+
+        public String dataToArrayString() {
+            return dataToArrayString(data);
+        }
+
+        public static String dataToArrayString(Object[] data) {
+            List<String> strings = Stream.of(data).map(Object::toString).toList();
+            return "[" + String.join(" ", strings) + "]";
         }
     }
 
@@ -206,7 +269,7 @@ public final class StorageEngine {
      * @param tableName the name of the table
      * @param partition the partition metadata to read
      */
-    public List<Object[]> readPartitionRows(Catalog catalog, String tableName, PartitionMeta partition) {
+    public List<Row> readPartitionRows(Catalog catalog, String tableName, PartitionMeta partition) {
         requireNonNull(tableName);
         requireNonNull(partition);
 
@@ -221,18 +284,19 @@ public final class StorageEngine {
             int cols = table.columns.size();
             readPartitionStats(in, table.columns, partition);
 
-            List<Object[]> colData = new ArrayList<>(cols);
+            List<Object[]> columnwiseData = new ArrayList<>(cols);
             for (ColumnSpec column : table.columns)
-                colData.add(readPartitionColumn(in, column.type(), rows));
+                columnwiseData.add(readPartitionColumn(in, column.type(), rows));
 
-            List<Object[]> result = new ArrayList<>(rows);
+            List<Row> rowwiseData = new ArrayList<>(rows);
             for (int r = 0; r < rows; r++) {
-                Object[] row = new Object[cols];
+                Object[] array = new Object[cols];
                 for (int c = 0; c < cols; c++)
-                    row[c] = colData.get(c)[r];
-                result.add(row);
+                    array[c] = columnwiseData.get(c)[r];
+
+                rowwiseData.add(Row.of(array, partition.fileName, r));
             }
-            return result;
+            return rowwiseData;
         } catch (IOException e) {
             throw new RuntimeException("failed reading partition " + partFile, e);
         }
@@ -408,7 +472,7 @@ public final class StorageEngine {
     }
 
     void writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
-        String fname = tableName + "-part-" + partitionIdx + ".bin";
+        String fname = partitionFileName(tableName, partitionIdx);
         Path out = dataDir.resolve(fname);
         try (DataOutputStream outp = new DataOutputStream(new FileOutputStream(out.toFile()))) {
             int rowsCount = rows.size();
@@ -490,9 +554,9 @@ public final class StorageEngine {
 
     private static Object[] readPartitionColumn(DataInputStream in, ColumnType t, int rows) throws IOException {
         Object[] values = new Object[rows];
-        for (int r = 0; r < rows; r++) {
+        for (int r = 0; r < rows; r++)
             values[r] = decodeValue(in, t);
-        }
+
         return values;
     }
 

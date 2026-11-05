@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.StorageEngine.Row;
 
 public final class ProjectOperator extends Operator.RowWiseIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProjectOperator.class);
@@ -46,12 +47,12 @@ public final class ProjectOperator extends Operator.RowWiseIntermediate {
     }
 
     @Override
-    protected NextResult nextIntermediate(Object[] row) {
-        Object[] result = new Object[mapping.length];
-        for (int i = 0; i < mapping.length; i++) {
-            result[i] = row[mapping[i]];
-        }
-        return NextResult.of(result);
+    protected NextResult nextIntermediate(Row row) {
+        Object[] newData = new Object[mapping.length];
+        for (int i = 0; i < mapping.length; i++)
+            newData[i] = row.data()[mapping[i]];
+
+        return NextResult.of(row.withData(newData));
     }
 
     @Override

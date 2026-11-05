@@ -3,10 +3,13 @@ package dk.itu.datasys.ops;
 import java.util.List;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.StorageEngine;
+import dk.itu.datasys.StorageEngine.Row;
 
 public final class MockOperator implements Operator {
     private final List<ColumnSpec> columns;
     private final List<Object[]> rows;
+    private static final String partitionFileName = StorageEngine.partitionFileName("mock", 0);
     private int rowsCurrent;
 
     public MockOperator(List<ColumnSpec> columns, List<Object[]> rows) {
@@ -26,11 +29,13 @@ public final class MockOperator implements Operator {
     }
 
     @Override
-    public Object[] next() {
+    public Row next() {
         if (rowsCurrent == rows.size())
             return null;
 
-        return rows.get(rowsCurrent++);
+        int index = rowsCurrent++;
+        Object[] data = rows.get(index);
+        return Row.of(data, partitionFileName, index);
     }
 
     @Override

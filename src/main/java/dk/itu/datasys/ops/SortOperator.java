@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.*;
+import dk.itu.datasys.StorageEngine.Row;
 
 public final class SortOperator extends Operator.ExhaustIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(SortOperator.class);
@@ -36,11 +37,11 @@ public final class SortOperator extends Operator.ExhaustIntermediate {
     }
 
     @Override
-    protected List<Object[]> openAndExhaustIntermediate(List<ColumnSpec> schema, List<Object[]> rows) {
+    protected List<Row> openAndExhaustIntermediate(List<ColumnSpec> schema, List<Row> rows) {
         ColumnType type = schema.get(column).type();
 
         return rows.stream()
-            .sorted((l, r) -> ordering.compareNonNull(l[column], r[column], type))
+            .sorted((l, r) -> ordering.compareNonNull(l.data()[column], r.data()[column], type))
             .toList();
     }
 

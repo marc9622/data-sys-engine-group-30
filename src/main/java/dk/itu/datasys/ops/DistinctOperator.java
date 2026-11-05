@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.StorageEngine.Row;
 
 public final class DistinctOperator extends Operator.RowWiseIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(DistinctOperator.class);
@@ -36,10 +37,10 @@ public final class DistinctOperator extends Operator.RowWiseIntermediate {
     }
 
     @Override
-    protected NextResult nextIntermediate(Object[] row) {
+    protected NextResult nextIntermediate(Row row) {
         rowsTotal++;
 
-        int rowKey = Arrays.hashCode(keyColumns.stream().map(i -> row[i]).toArray());
+        int rowKey = Arrays.hashCode(keyColumns.stream().map(i -> row.data()[i]).toArray());
         if (seenRowHashes.add(rowKey))
             return NextResult.of(row);
 

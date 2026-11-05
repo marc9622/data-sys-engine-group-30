@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.*;
+import dk.itu.datasys.StorageEngine.Row;
 
 public final class CountOperator extends Operator.ExhaustIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(CountOperator.class);
@@ -19,8 +20,9 @@ public final class CountOperator extends Operator.ExhaustIntermediate {
     }
 
     @Override
-    protected List<Object[]> openAndExhaustIntermediate(List<ColumnSpec> childSchema, List<Object[]> childRows) {
-        return List.<Object[]>of(new Object[] {(long) childRows.size()});
+    protected List<Row> openAndExhaustIntermediate(List<ColumnSpec> childSchema, List<Row> childRows) {
+        Object[] data = new Object[] {(long) childRows.size()};
+        return List.of(Row.ofEphemeral(data));
     }
 
     @Override

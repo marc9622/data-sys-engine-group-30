@@ -1,21 +1,31 @@
 package dk.itu.datasys.ops;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.StorageEngine.Row;
 
 public final class AssertOperator implements Operator {
 
     private final Operator actual;
-    private final List<Object[]> rowsExpected;
+    private final List<Row> rowsExpected;
+    private final boolean compareLocations;
     private int rowsCurrent = 0;
     private boolean isOpen = false;
 
-    public AssertOperator(Operator actual, List<Object[]> rowsExpected) {
+    public AssertOperator(Operator actual, List<Object[]> rowsDataExpected) {
+        List<Row> rowsExpected = rowsDataExpected.stream()
+            .map(Row::ofEphemeral)
+            .toList();
+
+        this(actual, rowsExpected, false);
+    }
+
+    private AssertOperator(Operator actual, List<Row> rowsExpected, boolean compareLocations) {
         this.actual = actual;
         this.rowsExpected = Objects.requireNonNull(rowsExpected);
+        this.compareLocations = compareLocations;
     }
 
     @Override
@@ -32,10 +42,10 @@ public final class AssertOperator implements Operator {
     }
 
     @Override
-    public Object[] next() {
+    public Row next() {
         assertIsOpen();
 
-        Object[] rowActual = actual.next();
+        Row rowActual = actual.next();
         if (rowActual == null) {
             if (rowsCurrent != rowsExpected.size())
                 throw new AssertionError("Fewer rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
@@ -46,9 +56,16 @@ public final class AssertOperator implements Operator {
         if (rowsCurrent == rowsExpected.size())
             throw new AssertionError("More rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
 
-        Object[] rowExpected = rowsExpected.get(rowsCurrent++);
-        if (!Arrays.equals(rowActual, rowExpected))
-            throw new AssertionError("Row " + (rowsCurrent - 1) + " does not match expected row. Expected: " + Arrays.toString(rowExpected) + ", Actual: " + Arrays.toString(rowActual));
+        Row rowExpected = rowsExpected.get(rowsCurrent++);
+        if (compareLocations) {
+            if (!rowExpected.equals(rowActual))
+                throw new AssertionError("Row " + (rowsCurrent - 1) + " does not match expected row. Expected: " + rowExpected + ", Actual: " + rowActual);
+        }
+        else {
+            if (!rowExpected.dataEquals(rowActual)) {
+                throw new AssertionError("Row " + (rowsCurrent - 1) + " does not match expected row. Expected: " + rowExpected.dataToArrayString() + ", Actual: " + rowActual.dataToArrayString());
+            }
+        }
 
         return rowActual;
     }
