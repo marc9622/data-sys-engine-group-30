@@ -103,12 +103,14 @@ public final class Executor {
 
         double elapsedMs = result.planningMs + result.executionMs;
 
+        List<Object[]> rows = result.rows.stream().map(Row::data).toList();
+
         LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
                  select.tableName(), result.rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), result.tableVersion, elapsedMs);
         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
                 result.planningMs, result.executionMs, elapsedMs);
                 
-        return result.rows.stream().map(Row::data).toList();
+        return rows;
     }
 
     public void executeDelete(Catalog catalog, Statement.Delete delete) {
@@ -116,12 +118,17 @@ public final class Executor {
 
         long deletionStart = System.nanoTime();
 
+        List<Row.Location> rows = result.rows.stream()
+            .map(Row::location)
+            .map(location -> location.orElseThrow(() -> new IllegalStateException("row has no location")))
+            .toList();
+
         double deletionMs = (System.nanoTime() - deletionStart) / 1_000_000.0;
 
         double elapsedMs = result.planningMs + result.executionMs + deletionMs;
 
         LOGGER.debug("statement=DELETE table={} rowsDeleted={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-                 delete.tableName(), result.rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), result.tableVersion, elapsedMs);
+                 delete.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), result.tableVersion, elapsedMs);
         LOGGER.debug("delete planningMs={} executionMs={} deletionMs={} elapsedMs={}",
                 result.planningMs, result.executionMs, deletionMs, elapsedMs);
     }
