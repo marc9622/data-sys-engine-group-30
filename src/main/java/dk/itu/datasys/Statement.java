@@ -123,37 +123,22 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
         }
     }
 
-    public static record Delete(List<String> columns, String tableName, Optional<Predicate> where) implements Statement {
-        public Delete(String tableName, Optional<Predicate> where) {
-            this(List.of(), tableName, where);
-        }
-
+    public static record Delete(String tableName, Optional<Predicate> where) implements Statement {
         public Select getMatchingSelect() {
-            return new Select(columns, tableName, where, Optional.empty());
+            return new Select(List.of(), tableName, where, Optional.empty());
         }
 
         @Override
         public String toString() {
-            return "Delete[columns=" + columns + " tableName=" + tableName + " where=" + where + "]";
+            return "Delete[columns=" + " tableName=" + tableName + " where=" + where + "]";
         }
 
         public static class Builder {
             private final String tableName;
-            private final List<String> columns = new ArrayList<>();
             private Optional<Predicate> where = Optional.empty();
-
+            
             public Builder(String tableName) {
                 this.tableName = tableName;
-            }
-
-            public Builder columns(List<String> columns) {
-                this.columns.addAll(columns);
-                return this;
-            }
-
-            public Builder columns(String... columns) {
-                this.columns.addAll(List.of(columns));
-                return this;
             }
 
             public Builder where(Optional<Predicate> where) {
@@ -167,7 +152,7 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
             }
 
             public Delete statement() {
-                return new Delete(List.copyOf(columns), tableName, where);
+                return new Delete(tableName, where);
             }
         }
     }
