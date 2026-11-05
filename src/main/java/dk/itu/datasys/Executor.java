@@ -128,16 +128,13 @@ public final class Executor {
         int tableVersion = tableMeta.getVersion();
         double elapsedMs = planningMs + executionMs;
         
-        
         LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
                  select.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableVersion, elapsedMs);        
         
-         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
-                 planningMs, executionMs, elapsedMs);
-        
+        LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
+                planningMs, executionMs, elapsedMs);
                 
-                return rows;
-          
+        return rows;
     }
 
     public ScanStats getLastScanStats() {
