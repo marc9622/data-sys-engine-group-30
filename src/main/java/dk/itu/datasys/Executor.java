@@ -123,12 +123,26 @@ public final class Executor {
             .map(location -> location.orElseThrow(() -> new IllegalStateException("row has no location")))
             .toList();
 
+        List<StorageEngine.PartitionMeta> affectedPartitions = rows.stream()
+            .map(Row.Location::partitionName)
+            .distinct()
+            .map(partitionName ->
+                engine.partitions(catalog, delete.tableName()).stream()
+                    .filter(partition -> partition.fileName.equals(partitionName))
+                    .findAny()
+                    .get())
+            .toList();
+
+        // TODO Get all non-deleted rows from affected partitions and copy them to new partitions
+
+        // TODO Update catalog information
+
         double deletionMs = (System.nanoTime() - deletionStart) / 1_000_000.0;
 
         double elapsedMs = result.planningMs + result.executionMs + deletionMs;
 
-        LOGGER.debug("statement=DELETE table={} rowsDeleted={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-                 delete.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), result.tableVersion, elapsedMs);
+        LOGGER.debug("statement=DELETE table={} rowsDeleted={} partitionsAffected={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
+                 delete.tableName(), rows.size(), affectedPartitions.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), result.tableVersion, elapsedMs);
         LOGGER.debug("delete planningMs={} executionMs={} deletionMs={} elapsedMs={}",
                 result.planningMs, result.executionMs, deletionMs, elapsedMs);
     }
