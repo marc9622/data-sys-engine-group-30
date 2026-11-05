@@ -6,9 +6,8 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Statement.Select.Predicate;
+import dk.itu.datasys.Spec.*;
+import dk.itu.datasys.Statement.Predicate;
 
 public final class FilterOperator extends Operator.RowWiseIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);

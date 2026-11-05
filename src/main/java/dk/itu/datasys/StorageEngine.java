@@ -14,7 +14,6 @@ import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
@@ -251,21 +250,6 @@ public final class StorageEngine {
             throw new IllegalArgumentException("unknown table: " + tableName);
 
         return List.copyOf(table.columns);
-    }
-
-    /**
-     * Returns true if the table exists in the catalog, false otherwise.
-     */
-    public boolean doesTableExist(String tableName) {
-        requireNonNull(tableName);
-
-        try {
-            Catalog catalog = readCatalog();
-
-            return catalog.tables.containsKey(tableName);
-        } catch (FileNotFoundException e) {
-            return false;
-        }
     }
 
     /**
@@ -631,6 +615,10 @@ public final class StorageEngine {
         public Map<String, TableMeta> tables = new HashMap<>();
 
         public Catalog() {} // Needed for deserialization
+
+        public boolean doesTableExist(String name) {
+            return tables.containsKey(name);
+        }
 
         @Override
         public boolean equals(Object o) {

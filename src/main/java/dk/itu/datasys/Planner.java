@@ -7,9 +7,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
-import dk.itu.datasys.Statement.Select;
+import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.Catalog;
 import dk.itu.datasys.ops.FilterOperator;
 import dk.itu.datasys.ops.LimitOperator;
@@ -26,7 +24,7 @@ public final class Planner {
         this.engine = Objects.requireNonNull(engine, "engine");
     }
 
-    public Plan plan(Catalog catalog, Select select) {
+    public Plan plan(Catalog catalog, Statement.Select select) {
         Objects.requireNonNull(select, "select");
 
         String tableName = select.tableName();
@@ -39,7 +37,7 @@ public final class Planner {
             LOGGER.debug("table={} no-where partitions={} decision=READ", tableName, survivingPartitions.size());
         }
         else {
-            Select.Predicate predicate = select.where().get();
+            Statement.Predicate predicate = select.where().get();
             List<ColumnSpec> schema = engine.schema(catalog, tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
             ColumnType columnType = schema.get(columnIndex).type();
@@ -66,7 +64,7 @@ public final class Planner {
         Operator root = new ScanOperator(engine, catalog, tableName, survivingPartitions);
 
         if (select.where().isPresent()) {
-            Select.Predicate predicate = select.where().get();
+            Statement.Predicate predicate = select.where().get();
             List<ColumnSpec> schema = engine.schema(catalog, tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
             root = new FilterOperator(root, predicate, columnIndex);

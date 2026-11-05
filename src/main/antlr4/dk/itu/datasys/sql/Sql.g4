@@ -12,7 +12,7 @@ columnType  : STRING | LONG | DOUBLE ;
 copy        : COPY IDENTIFIER FROM STRING_LITERAL ;
 
 select      : SELECT ('*' | columnList) FROM IDENTIFIER (WHERE predicate)? (LIMIT limit)? ;
-delete      : DELETE ('*' | columnList) FROM IDENTIFIER (WHERE predicate)? ;
+delete      : DELETE FROM IDENTIFIER (WHERE predicate)? ;
 columnList  : IDENTIFIER (',' IDENTIFIER)* ;
 predicate   : IDENTIFIER comparison=('=' | '<' | '>') literal ;
 limit       : LONG_LITERAL ;
@@ -22,7 +22,7 @@ literal     : STRING_LITERAL | LONG_LITERAL | DOUBLE_LITERAL ;
 CREATE : 'CREATE' ;   TABLE : 'TABLE' ;   COPY : 'COPY' ;   FROM : 'FROM' ;
 SELECT : 'SELECT' ;   WHERE : 'WHERE' ;   LIMIT : 'LIMIT' ;
 STRING : 'STRING' ;   LONG : 'LONG' ;   DOUBLE : 'DOUBLE' ;
-DELETE : 'DELETE' ;   WHERE : 'WHERE' ;  
+DELETE : 'DELETE' ;  
 
 IDENTIFIER      : [A-Z_] [A-Z_0-9]* ;        // caseInsensitive covers a–z
 LONG_LITERAL    : '-'? [0-9]+ ;

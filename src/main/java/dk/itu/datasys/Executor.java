@@ -67,7 +67,7 @@ public final class Executor {
 
         try {
             Utils.logExceptions(LOGGER, "failed to bind statement", () ->
-                binder.bind(catalog, statement));
+                binder.bindStatement(catalog, statement));
 
             List<Object[]> result = switch (statement) {
                 case Statement.CreateTable create ->
@@ -83,6 +83,11 @@ public final class Executor {
                 case Statement.Select select ->
                     Utils.logExceptions(LOGGER, "failed to execute query", () ->
                         executeSelect(catalog, select));
+                case Statement.Delete delete ->
+                    Utils.logExceptions(LOGGER, "failed to execute delete", () -> {
+                        executeDelete(catalog, delete);
+                        return List.of();
+                    });
             };
         
             return result;
@@ -93,6 +98,36 @@ public final class Executor {
     }
 
     public List<Object[]> executeSelect(Catalog catalog, Statement.Select select) {
+        ExecuteQueryResult result = executeQuery(catalog, select);
+
+        double elapsedMs = result.planningMs + result.executionMs;
+
+        LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
+                 select.tableName(), result.rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), result.tableVersion, elapsedMs);
+        LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
+                result.planningMs, result.executionMs, elapsedMs);
+                
+        return result.rows;
+    }
+
+    public void executeDelete(Catalog catalog, Statement.Delete delete) {
+        ExecuteQueryResult result = executeQuery(catalog, delete.getMatchingSelect());
+
+        long deletionStart = System.nanoTime();
+
+        double deletionMs = (System.nanoTime() - deletionStart) / 1_000_000.0;
+
+        double elapsedMs = result.planningMs + result.executionMs + deletionMs;
+
+        LOGGER.debug("statement=DELETE table={} rowsDeleted={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
+                 delete.tableName(), result.rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), result.tableVersion, elapsedMs);
+        LOGGER.debug("delete planningMs={} executionMs={} deletionMs={} elapsedMs={}",
+                result.planningMs, result.executionMs, deletionMs, elapsedMs);
+    }
+
+    public static record ExecuteQueryResult(List<Object[]> rows, int tableVersion, double planningMs, double executionMs) {}
+
+    public ExecuteQueryResult executeQuery(Catalog catalog, Statement.Select select) {
         long planningStart = System.nanoTime();
 
         Plan plan = Utils.logExceptions(LOGGER, "failed to make plan", () ->
@@ -102,13 +137,13 @@ public final class Executor {
 
         double planningMs = (System.nanoTime() - planningStart) / 1_000_000.0;
 
+        long executionStart = System.nanoTime();
+
         Operator root = plan.root();
         List<Object[]> rows = new ArrayList<>();
-        long executionStart = System.nanoTime();
 
         Utils.logExceptions(LOGGER, "failed to open operations", () ->
             root.open());
-
         try {
             Utils.logExceptions(LOGGER, "failed to get rows from operations", () -> {
                 root.exhaust(rows);
@@ -121,16 +156,8 @@ public final class Executor {
         double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
         
         TableMeta tableMeta = catalog.tables.get(select.tableName());
-        int tableVersion = tableMeta.getVersion();
-        double elapsedMs = planningMs + executionMs;
-        
-        LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-                 select.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableVersion, elapsedMs);        
-        
-        LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
-                planningMs, executionMs, elapsedMs);
-                
-        return rows;
+
+        return new ExecuteQueryResult(rows, tableMeta.getVersion(), planningMs, executionMs);
     }
 
     public ScanStats getLastScanStats() {
