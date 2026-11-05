@@ -211,10 +211,8 @@ class StorageEngineIT {
 
         StorageEngine.Catalog c2 = e2.viewCatalogForTesting();
 
-        // assert that both engines return equal catalogs
         assertEquals(c1, c2);
 
-        // assert that both engines return same results for a query
         List<Object[]> out1 = new Executor(e1).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
         List<Object[]> out2 = new Executor(e2).executeScript("SELECT * FROM trips WHERE distance > -1;").get(0);
         assertEquals(out1.size(), out2.size());
@@ -350,8 +348,7 @@ class StorageEngineIT {
         List<String> originalFiles = e.viewCatalogForTesting().tables.get("trips").partitions.stream()
                 .map(partition -> partition.fileName)
                 .toList();
-        assertEquals(List.of("trips-part-0.bin", "trips-part-1.bin",
-                "trips-part-2.bin", "trips-part-3.bin"), originalFiles);
+        assertEquals(IntStream.range(0, 4).mapToObj(this::tripsPartitionName).toList(), originalFiles);
 
         ex.executeScript("DELETE FROM trips WHERE distance > 150;");
 
@@ -370,7 +367,7 @@ class StorageEngineIT {
         assertEquals(originalFiles.get(1), table.partitions.get(1).fileName);
         assertEquals(originalFiles.get(2), table.partitions.get(2).fileName);
         assertEquals(originalFiles.get(3), table.partitions.get(3).fileName);
-        assertEquals("trips-part-4.bin", table.partitions.get(4).fileName);
+        assertEquals(tripsPartitionName(4), table.partitions.get(4).fileName);
 
         List<Object[]> rows = ex.executeScript("SELECT * FROM trips;").getFirst();
         assertEquals(5, rows.size());
@@ -384,15 +381,16 @@ class StorageEngineIT {
 
         firstExecutor.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
         firstExecutor.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
-        // delete rows with distance > 200, 6 rows should remain
         firstExecutor.executeScript("DELETE FROM trips WHERE distance > 200;");
+        int expectedRows = parseCsvFile(resource("trips.csv")).stream().filter(r -> (Long) r[1] <= 200).toList().size();
 
         assertTableVersion(2, first, "trips");
 
         StorageEngine fresh = new StorageEngine(tmp);
         assertTableVersion(2, fresh, "trips");
+
         List<Object[]> rows = new Executor(fresh).executeScript("SELECT * FROM trips;").getFirst();
-        assertEquals(6, rows.size());
+        assertEquals(expectedRows, rows.size());
         assertTrue(rows.stream().allMatch(row -> (Long) row[1] <= 200));
     }
 
@@ -409,12 +407,16 @@ class StorageEngineIT {
         StorageEngine.TableMeta table = e.viewCatalogForTesting().tables.get("trips");
         assertEquals(1, table.partitions.size());
         assertEquals(0, e.partitions(e.viewCatalogForTesting(), "trips").size());
-        assertFalse(Files.exists(tmp.resolve("trips-part-1.bin")));
+        assertFalse(Files.exists(tmp.resolve(tripsPartitionName(1))));
         assertEquals(0, ex.executeScript("SELECT * FROM trips;").getFirst().size());
     }
 
     void assertTableVersion(int expected, StorageEngine engine, String tableName) {
         int actual = engine.viewCatalogForTesting().tables.get(tableName).version;
         assertEquals(expected, actual, "Expected table version " + expected + ", but got " + actual);
+    }
+
+    String tripsPartitionName(int index) {
+        return StorageEngine.partitionFileName("trips", index);
     }
 }

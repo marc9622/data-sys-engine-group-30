@@ -26,7 +26,7 @@ import dk.itu.datasys.Spec.*;
 public final class StorageEngine {
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageEngine.class);
 
-    public static record ScanStats(int partitionsTotal, int partitionsRead, int partitionsPruned) { }
+    public static record ScanStats(int partitionsTotal, int partitionsRead, int partitionsPruned) {}
 
     private static final String catalogFileName = "catalog.json";
     private static final String catalogLockFileName = "catalog.lock";
@@ -35,7 +35,7 @@ public final class StorageEngine {
         return "catalog_temp_" + String.format("%04d", random) + ".json";
     }
 
-    private static String partitionFileName(String tableName, int partitionIdx) {
+    public static String partitionFileName(String tableName, int partitionIdx) {
         return tableName + "-part-" + partitionIdx + ".bin";
     }
 
