@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
-import dk.itu.datasys.Statement.Select.Predicate;
+import dk.itu.datasys.Statement.Predicate;
 import dk.itu.datasys.StorageEngine;
 import dk.itu.datasys.StorageEngine.Catalog;
 

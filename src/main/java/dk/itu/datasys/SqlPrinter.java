@@ -55,7 +55,7 @@ public final class SqlPrinter {
         sb.append(" FROM ").append(select.tableName());
 
         if (select.where().isPresent()) {
-            Statement.Select.Predicate predicate = select.where().get();
+            Statement.Predicate predicate = select.where().get();
             sb.append(" WHERE ")
               .append(predicate.columnName())
               .append(" ")

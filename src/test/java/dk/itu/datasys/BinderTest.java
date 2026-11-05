@@ -23,15 +23,15 @@ class BinderTest {
 
         Binder binder = new Binder(engine);
 
-        assertDoesNotThrow(() -> binder.bind(
+        assertDoesNotThrow(() -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.copy("trips", "trips.csv")));
-        assertDoesNotThrow(() -> binder.bind(
+        assertDoesNotThrow(() -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("trips")
                     .where("distance", Comparison.GREATER_THAN, 100L)
                     .statement()));
-        assertDoesNotThrow(() -> binder.bind(
+        assertDoesNotThrow(() -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.createTable("other")
                     .addColumn("name", ColumnType.STRING)
@@ -48,21 +48,21 @@ class BinderTest {
 
         Binder binder = new Binder(engine);
 
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("missing")
                     .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("trips")
                     .where("missing", Comparison.EQUALS, 10L)
                     .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("trips")
                     .where("distance", Comparison.EQUALS, "x")
                     .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.createTable("duplicates")
                     .addColumn("a", ColumnType.STRING)
