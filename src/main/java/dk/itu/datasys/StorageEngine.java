@@ -30,6 +30,7 @@ public final class StorageEngine {
 
     private static final String catalogFileName = "catalog.json";
     private static final String catalogLockFileName = "catalog.lock";
+    private static final Object catalogCommitLock = new Object();
     private static String tempCatalogFileName() {
         int random = ThreadLocalRandom.current().nextInt(0, 10000);
         return "catalog_temp_" + String.format("%04d", random) + ".json";
@@ -53,6 +54,7 @@ public final class StorageEngine {
     private final Path catalogPath;
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private final int maxRowsPerPartition;
+    private Map<String, Integer> catalogBaseVersions = Map.of();
 
     // ---------- Public API ----------
 
@@ -369,9 +371,13 @@ public final class StorageEngine {
     public Catalog openCatalog() {
         assert !catalogState.isOpen() : "a catalog is already open; close it before opening again";
 
-        catalogState = CatalogState.OPEN_CLEAN;
+        Catalog catalog = readOrCreateEmptyCatalog();
+        catalogBaseVersions = new HashMap<>();
+        for (Map.Entry<String, TableMeta> entry : catalog.tables.entrySet())
+            catalogBaseVersions.put(entry.getKey(), entry.getValue().version);
 
-        return readOrCreateEmptyCatalog();
+        catalogState = CatalogState.OPEN_CLEAN;
+        return catalog;
     }
 
     /**
@@ -390,10 +396,13 @@ public final class StorageEngine {
     public void closeCatalog(Catalog catalog) {
         assert catalogState.isOpen() : "catalog is not open; cannot close";
 
-        if (catalogState == CatalogState.OPEN_DIRTY)
-            commitCatalog(catalog);
-
-        catalogState = CatalogState.NONE;
+        try {
+            if (catalogState == CatalogState.OPEN_DIRTY)
+                commitCatalog(catalog);
+        } finally {
+            catalogBaseVersions = Map.of();
+            catalogState = CatalogState.NONE;
+        }
     }
 
     public boolean isCatalogOpenForTesting() {
@@ -693,37 +702,75 @@ public final class StorageEngine {
         }
 
         try {
-            // TODO lock here
+            synchronized (catalogCommitLock) {
+                if (!IS_WINDOWS) {
+                    validateAndCommitCatalog(catalog, tempCatalogFile.toPath());
+                    return;
+                }
 
-            // TODO check if other threads have committed by checking if catalog still has the same previous version number
+                File catalogLockFile = catalogPath.resolveSibling(catalogLockFileName).toFile();
 
-            // TODO if conflict occurred, abort modification, i.e. delete temporary catalog and throw `ConflictException`
-
-            // (The Windows file locking is not technically not necessary when using process-owned in-memory-locks)
-            if (!IS_WINDOWS) {
-                renameReplaceTempCatalogUnlocked(tempCatalogFile.toPath());
-                return;
-            }
-
-            File catalogLockFile = catalogPath.resolveSibling(catalogLockFileName).toFile();
-
-            try (
-                RandomAccessFile raf = new RandomAccessFile(catalogLockFile, "rw");
-                FileChannel lockChannel = raf.getChannel();
-                FileLock _ = lockChannel.lock(0, Long.MAX_VALUE, false); // Blocks here until readers finish
-            ) {
-                renameReplaceTempCatalogUnlocked(tempCatalogFile.toPath());
-            } catch (IOException e) {
-                throw new RuntimeException("failed to lock catalog for writing", e);
+                try (
+                    RandomAccessFile raf = new RandomAccessFile(catalogLockFile, "rw");
+                    FileChannel lockChannel = raf.getChannel();
+                    FileLock _ = lockChannel.lock(0, Long.MAX_VALUE, false); // Blocks here until readers finish
+                ) {
+                    validateAndCommitCatalog(catalog, tempCatalogFile.toPath());
+                } catch (IOException e) {
+                    throw new RuntimeException("failed to lock catalog for writing", e);
+                }
             }
         }
         finally {
-            // TODO unlock here
+            try {
+                Files.deleteIfExists(tempCatalogFile.toPath());
+            } catch (IOException e) {
+                throw new RuntimeException("failed to delete temporary catalog", e);
+            }
+        }
+    }
+
+    private void validateAndCommitCatalog(Catalog catalog, Path tempCatalogFilePath) {
+        Catalog currentCatalog;
+        try {
+            currentCatalog = readCatalogUnlocked();
+        } catch (FileNotFoundException e) {
+            currentCatalog = new Catalog();
+        }
+
+        // Validate every table that existed when this statement opened its snapshot.
+        // Only tables modified by this statement need to be checked for a conflict.
+        for (Map.Entry<String, Integer> base : catalogBaseVersions.entrySet()) {
+            TableMeta currentTable = currentCatalog.tables.get(base.getKey());
+            TableMeta candidateTable = catalog.tables.get(base.getKey());
+            if (candidateTable != null && candidateTable.version != base.getValue())
+                ensureTableVersionUnchanged(base.getKey(), base.getValue(), currentTable);
+        }
+
+        // A table missing from the base snapshot was created by this statement.
+        // It conflicts if another writer created the same table in the meantime.
+        for (String tableName : catalog.tables.keySet()) {
+            if (!catalogBaseVersions.containsKey(tableName)) {
+                TableMeta currentTable = currentCatalog.tables.get(tableName);
+                if (currentTable != null) {
+                    LOGGER.error("conflict table={} base={} current={}", tableName, 0, currentTable.version);
+                    throw new ConflictException(tableName, 0, currentTable.version);
+                }
+            }
+        }
+
+        renameReplaceTempCatalogUnlocked(tempCatalogFilePath);
+    }
+
+    private void ensureTableVersionUnchanged(String tableName, int baseVersion, TableMeta currentTable) {
+        int currentVersion = currentTable == null ? -1 : currentTable.version;
+        if (currentVersion != baseVersion) {
+            LOGGER.error("conflict table={} base={} current={}", tableName, baseVersion, currentVersion);
+            throw new ConflictException(tableName, baseVersion, currentVersion);
         }
     }
 
     private void renameReplaceTempCatalogUnlocked(Path tempCatalogFilePath) {
-        // TODO: For concurrency, we should check that our catalog changes won't conflict with other concurrent catalog changes.
         try {
             Files.move(tempCatalogFilePath, catalogPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
