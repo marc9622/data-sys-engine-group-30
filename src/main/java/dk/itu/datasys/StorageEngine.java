@@ -772,10 +772,6 @@ public final class StorageEngine {
                     ", partitions=" + partitions +
                     '}';
         }
-
-        public int getVersion() {
-            return version;
-        }
     }
 
     public static final class PartitionMeta {
