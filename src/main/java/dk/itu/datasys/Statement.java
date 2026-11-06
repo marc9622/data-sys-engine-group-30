@@ -7,7 +7,9 @@ import java.util.Optional;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.*;
 
-public sealed interface Statement permits CreateTable, Copy, Select {
+public sealed interface Statement permits CreateTable, Copy, Select, Delete {
+    String tableName();
+
     public static record CreateTable(String tableName, List<ColumnSpec> columns) implements Statement {
         @Override
         public String toString() {
@@ -54,6 +56,17 @@ public sealed interface Statement permits CreateTable, Copy, Select {
         return new Copy(tableName, csvFilePath);
     }
 
+    public static record Predicate(String columnName, Comparison comparison, Object constant) {
+        public boolean matches(Object value, ColumnType type) {
+            return comparison.matches(value, constant, type);
+        }
+
+        @Override
+        public String toString() {
+            return "Predicate[columnName=" + columnName + " comparison=" + comparison + " constant=" + constant + "]";
+        }
+    }
+
     public static record Select(List<String> columns, String tableName, Optional<Predicate> where, Optional<Integer> limit) implements Statement {
         public Select(String tableName, Optional<Predicate> where, Optional<Integer> limit) {
             this(List.of(), tableName, where, limit);
@@ -61,18 +74,7 @@ public sealed interface Statement permits CreateTable, Copy, Select {
 
         @Override
         public String toString() {
-            return "Select[columns=" + columns + " tableName=" + tableName + " where=" + where + " limit=" + limit + "]";
-        }
-
-        public static record Predicate(String columnName, Comparison comparison, Object constant) {
-            public boolean matches(Object value, ColumnType type) {
-                return comparison.matches(value, constant, type);
-            }
-
-            @Override
-            public String toString() {
-                return "Predicate[columnName=" + columnName + " comparison=" + comparison + " constant=" + constant + "]";
-            }
+            return "Select[columns=[" + String.join(" ", columns) + "] tableName=" + tableName + " where=" + where + " limit=" + limit + "]";
         }
 
         public static class Builder {
@@ -119,6 +121,44 @@ public sealed interface Statement permits CreateTable, Copy, Select {
                 return new Select(List.copyOf(columns), tableName, where, limit);
             }
         }
+    }
+
+    public static record Delete(String tableName, Optional<Predicate> where) implements Statement {
+        public Select getMatchingSelect() {
+            return new Select(List.of(), tableName, where, Optional.empty());
+        }
+
+        @Override
+        public String toString() {
+            return "Delete[tableName=" + tableName + " where=" + where + "]";
+        }
+
+        public static class Builder {
+            private final String tableName;
+            private Optional<Predicate> where = Optional.empty();
+            
+            public Builder(String tableName) {
+                this.tableName = tableName;
+            }
+
+            public Builder where(Optional<Predicate> where) {
+                this.where = where;
+                return this;
+            }
+
+            public Builder where(String columnName, Comparison comparison, Object constant) {
+                this.where = Optional.of(new Predicate(columnName, comparison, constant));
+                return this;
+            }
+
+            public Delete statement() {
+                return new Delete(tableName, where);
+            }
+        }
+    }
+
+    public static Delete.Builder delete(String tableName) {
+        return new Delete.Builder(tableName);
     }
 
     public static Select.Builder select(String tableName) {

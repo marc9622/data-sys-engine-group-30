@@ -45,8 +45,8 @@ This is the state of the engine that the report describes, and the tag the teach
 
 ## Definition of done
 
-- [ ] Experiment run as designed: script and seed committed, at least 5 executions per point, median and spread reported, conditions stated.
-- [ ] Chart created, with labeled axes and units.
-- [ ] Report of 5–7 pages, submitted via LearnIT.
-- [ ] Tag `v0.6` pushed, green in CI.
-- [ ] Demo ready (optional).
+- [x] Experiment run as designed: script and seed committed, at least 5 executions per point, median and spread reported, conditions stated.
+- [x] Chart created, with labeled axes and units.
+- [x] Report of 5–7 pages, submitted via LearnIT.
+- [x] Tag `v0.6` pushed, green in CI.
+- [x] Demo ready (optional).
