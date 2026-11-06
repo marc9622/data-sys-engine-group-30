@@ -15,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.Catalog;
 import dk.itu.datasys.TestingUtils.Streams;
+import dk.itu.datasys.ops.Operator;
 
 class StorageEngineIT {
 
@@ -229,31 +230,23 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
         Executor ex = new Executor(e);
 
-        assertFalse(e.isCatalogOpenForTesting());
-
         ex.executeScript("CREATE TABLE t (city STRING, distance LONG, price DOUBLE);");
 
-        assertFalse(e.isCatalogOpenForTesting());
-
         {
             Catalog catalog = e.openCatalog();
-            assertTrue(e.isCatalogOpenForTesting());
+            assertFalse(catalog.isModified());
             e.copyFromCsvFile(catalog, "t", resource("trips.csv"));
-            assertTrue(e.isCatalogOpenForTesting());
+            assertTrue(catalog.isModified());
             e.closeCatalog(catalog);
         }
-
-        assertFalse(e.isCatalogOpenForTesting());
 
         {
             Catalog catalog = e.openCatalog();
-            assertTrue(e.isCatalogOpenForTesting());
+            assertFalse(catalog.isModified());
             ex.executeSelect(catalog, Statement.select("t").statement());
-            assertTrue(e.isCatalogOpenForTesting());
+            assertFalse(catalog.isModified());
             e.closeCatalog(catalog);
         }
-
-        assertFalse(e.isCatalogOpenForTesting());
     }
 
     @Test
@@ -423,6 +416,33 @@ class StorageEngineIT {
         assertEquals(0, e.activePartitions(catalog2, "trips").size());
         assertFalse(Files.exists(tmp.resolve(tripsPartitionName(1))));
         assertEquals(0, ex.executeScript("SELECT * FROM trips;").getFirst().size());
+    }
+
+    @Test
+    void concurrentReadDeleteConsistency(@TempDir Path tmp) throws Exception {
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        List<Object[]> expectedRows = ex.executeScript("SELECT * FROM trips;").getFirst();
+
+        Catalog catalog = e.openCatalog();
+
+        Planner planner = new Planner(e);
+        Plan plan = planner.plan(e.viewCatalogForTesting(), Statement.select("trips").statement());
+        Operator root = plan.root();
+
+        ex.executeScript("DELETE FROM trips WHERE distance > 100;");
+
+        root.open();
+        List<Object[]> actualRows = root.exhaust();
+        root.close();
+
+        e.closeCatalog(catalog);
+
+        assertEquals(expectedRows.size(), actualRows.size());
     }
 
     void assertTableVersion(int expected, StorageEngine engine, String tableName) {

@@ -2,6 +2,9 @@ package dk.itu.datasys;
 
 import java.io.*;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
@@ -40,24 +43,10 @@ public final class StorageEngine {
         return tableName + "-part-" + partitionIdx + ".bin";
     }
 
-    private enum CatalogState {
-        NONE, OPEN_CLEAN, OPEN_DIRTY;
-
-        boolean isOpen() {
-            return this == OPEN_CLEAN || this == OPEN_DIRTY;
-        }
-    }
-
-    private CatalogState catalogState = CatalogState.NONE;
-
     private final Path dataDir;
     private final Path catalogPath;
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private final int maxRowsPerPartition;
-
-    // When opening the catalog, we remember all the table versions store them here.
-    // This allows us to compare the versions when committing the catalog to detect conflicts.
-    private Map<String, Integer> tableBaseVersions = new HashMap<>();
 
     // ---------- Public API ----------
 
@@ -123,8 +112,6 @@ public final class StorageEngine {
      * @param columns the list of columns for the table
      */
     public void createTable(Catalog catalog, String tableName, List<ColumnSpec> columns) {
-        markCatalog(); 
-
         requireNonNull(tableName, "tableName");
         requireNonNull(columns, "columns");
 
@@ -156,8 +143,6 @@ public final class StorageEngine {
      * @param csvFilePath the path to the CSV file
      */
     public void copyFromCsvFile(Catalog catalog, String tableName, Path csvFilePath) {
-        markCatalog(); 
-
         requireNonNull(tableName);
         requireNonNull(csvFilePath);
 
@@ -216,8 +201,6 @@ public final class StorageEngine {
      * @param predicate an optional predicate to filter rows to delete
      */
     public int deleteFromTable(Catalog catalog, String tableName, Optional<Statement.Predicate> predicate) {
-        markCatalog();
-
         requireNonNull(tableName);
         requireNonNull(predicate);
 
@@ -372,44 +355,15 @@ public final class StorageEngine {
      * If the catalog file does not exist, it creates an empty catalog and returns that.
      */
     public Catalog openCatalog() {
-        assert !catalogState.isOpen() : "a catalog is already open; close it before opening again";
-
-        Catalog catalog = readOrCreateEmptyCatalog();
-        tableBaseVersions.clear();
-        catalog.tables.forEach((tableName, tableMeta) ->
-            tableBaseVersions.put(tableName, tableMeta.version));
-
-        catalogState = CatalogState.OPEN_CLEAN;
-        return catalog;
-    }
-
-    /**
-     * Marks the catalog as dirty, indicating that it has been modified and needs to be committed.
-     * This method must be called before any modifications are made to the catalog.
-     */
-    private void markCatalog() {
-        assert catalogState == CatalogState.OPEN_CLEAN : "catalog is not open or already dirty; cannot mark dirty";
-
-        catalogState = CatalogState.OPEN_DIRTY;
+        return readOrCreateEmptyCatalog();
     }
 
     /**
      * Closes the catalog, committing any changes if it was marked as dirty.
      */
     public void closeCatalog(Catalog catalog) {
-        assert catalogState.isOpen() : "catalog is not open; cannot close";
-
-        try {
-            if (catalogState == CatalogState.OPEN_DIRTY)
-                commitCatalog(catalog);
-        } finally {
-            tableBaseVersions = Map.of();
-            catalogState = CatalogState.NONE;
-        }
-    }
-
-    public boolean isCatalogOpenForTesting() {
-        return catalogState.isOpen();
+        if (catalog.isModified())
+            commitCatalog(catalog);
     }
 
     public Catalog viewCatalogForTesting() {
@@ -696,6 +650,8 @@ public final class StorageEngine {
     }
 
     private void commitCatalog(Catalog catalog) {
+        LOGGER.debug("commit catalog tables={}", catalog.tables.size());
+
         File tempCatalogFile = catalogPath.resolveSibling(tempCatalogFileName()).toFile();
 
         try {
@@ -733,43 +689,65 @@ public final class StorageEngine {
         }
     }
 
-    private void validateAndCommitCatalog(Catalog newCatalog, Path tempCatalogFilePath) {
+    /**
+     * Requires catalog lock to be held.
+     */
+    private void validateAndCommitCatalog(Catalog localCatalog, Path tempCatalogFilePath) {
+        Catalog activeCatalog;
         try {
-            Catalog realCatalog = readCatalogUnlocked();
-
-            // Validate every table that existed when this statement opened its snapshot.
-            // Only tables modified by this statement need to be checked for a conflict.
-            tableBaseVersions.forEach((tableName, baseVersion) -> {
-                TableMeta realTable = realCatalog.tables.get(tableName);
-                TableMeta newTable = newCatalog.tables.get(tableName);
-                if (newTable.version != baseVersion)
-                    ensureTableVersionUnchanged(tableName, baseVersion, realTable);
-            });
-
-            // A table missing from the base snapshot was created by this statement.
-            // It conflicts if another writer created the same table in the meantime.
-            for (String tableName : newCatalog.tables.keySet()) {
-                if (!tableBaseVersions.containsKey(tableName)) {
-                    TableMeta currentTable = realCatalog.tables.get(tableName);
-                    if (currentTable != null) {
-                        LOGGER.error("conflict table={} base={} current={}", tableName, 0, currentTable.version);
-                        throw new ConflictException(tableName, 0, currentTable.version);
-                    }
-                }
-            }
+            activeCatalog = readCatalogUnlocked();
         } catch (FileNotFoundException e) {
             // Someone deleted the catalog file while we performed the statement.
             // So we can safely ignore the validation and just commit our new catalog.
+            renameReplaceTempCatalogUnlocked(tempCatalogFilePath);
+            return;
+        }
+
+        Set<String> allTableNames = new HashSet<>();
+        allTableNames.addAll(localCatalog.tables.keySet());
+        allTableNames.addAll(activeCatalog.tables.keySet());
+ 
+        for (String tableName : allTableNames) {
+            // At most one of localTable and activeTable can be null.
+            TableMeta localTable = localCatalog.tables.get(tableName);
+            TableMeta activeTable = activeCatalog.tables.get(tableName);
+
+            // Check if another writer created a table while we executed our statement.
+            if (localTable == null) {
+                int activeVersion = activeTable.version;
+                LOGGER.error("conflict table={} localTable=null activeTable=new activeVersion={}", tableName, activeVersion);
+                throw new ConflictException("Concurrent write detected: table `" + tableName + "` was created by another writer while this statement was executing");
+            }
+
+            // Check if the table only exists in our local catalog, meaning that we created it.
+            if (activeTable == null) {
+                continue;
+            }
+
+            int activeVersion = activeTable.version;
+
+            // Check if we and another writer both created a new table with the same name.
+            if (localTable.baseVersion.isEmpty()) {
+                int localVersion = localTable.version;
+                LOGGER.error("conflict table={} localTable=new localVersion={} activeTable=new activeVersion={}", tableName, localVersion, activeVersion);
+                throw new ConflictException("Concurrent write detected: table `" + tableName + "` was created by another writer while this statement was executing");
+            }
+
+            int localBaseVersion = localTable.baseVersion.get();
+
+            // Check if the table was modified by another writer while we executed our statement.
+            if (localBaseVersion != activeVersion) {
+                LOGGER.error("conflict table={} localBaseVersion={} activeVersion={}", tableName, localBaseVersion, activeVersion);
+                throw new ConflictException("Concurrent write detected: table `" + tableName + "` was modified by another writer while this statement was executing");
+            }
         }
 
         renameReplaceTempCatalogUnlocked(tempCatalogFilePath);
     }
 
-    private void ensureTableVersionUnchanged(String tableName, int baseVersion, TableMeta currentTable) {
-        int currentVersion = currentTable == null ? -1 : currentTable.version;
-        if (currentVersion != baseVersion) {
-            LOGGER.error("conflict table={} base={} current={}", tableName, baseVersion, currentVersion);
-            throw new ConflictException(tableName, baseVersion, currentVersion);
+    public static final class ConflictException extends RuntimeException {
+        public ConflictException(String message) {
+            super(message);
         }
     }
 
@@ -792,6 +770,18 @@ public final class StorageEngine {
             return tables.containsKey(name);
         }
 
+        boolean isModified() {
+            for (TableMeta table : tables.values()) {
+                if (table.baseVersion.isEmpty())
+                    return true;
+
+                if (table.version != table.baseVersion.get())
+                    return true;
+            }
+
+            return false;
+        }
+
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
@@ -809,12 +799,20 @@ public final class StorageEngine {
 
     public static final class TableMeta {
         public int version = 0;
+        @JsonIgnore // A null base version means the table was created by this statement
+        private final Optional<Integer> baseVersion;
         public int nextPartitionNumber = 0;
         public final List<ColumnSpec> columns = new ArrayList<>();
         public final List<PartitionMeta> partitions = new ArrayList<>();
 
-        public TableMeta() {} // Needed for deserialization
+        @JsonCreator
+        public TableMeta(@JsonProperty("version") int version) {
+            this.version = version;
+            this.baseVersion = Optional.of(version);
+        }
+
         public TableMeta(List<ColumnSpec> columns) {
+            this.baseVersion = Optional.empty();
             this.columns.addAll(columns);
         }
 
