@@ -23,19 +23,24 @@ class BinderTest {
 
         Binder binder = new Binder(engine);
 
-        assertDoesNotThrow(() -> binder.bind(
+        assertDoesNotThrow(() -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.copy("trips", "trips.csv")));
-        assertDoesNotThrow(() -> binder.bind(
-                    engine.viewCatalogForTesting(),
-                    Statement.select("trips")
-                    .where("distance", Comparison.GREATER_THAN, 100L)
-                    .statement()));
-        assertDoesNotThrow(() -> binder.bind(
+        assertDoesNotThrow(() -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.createTable("other")
-                    .addColumn("name", ColumnType.STRING)
-                    .statement()));
+                        .addColumn("name", ColumnType.STRING)
+                        .statement()));
+        assertDoesNotThrow(() -> binder.bindStatement(
+                    engine.viewCatalogForTesting(),
+                    Statement.select("trips")
+                        .where("distance", Comparison.GREATER_THAN, 100L)
+                        .statement()));
+        assertDoesNotThrow(() -> binder.bindStatement(
+                    engine.viewCatalogForTesting(),
+                    Statement.delete("trips")
+                        .where("distance", Comparison.LESS_THAN, 50L)
+                        .statement()));
     }
 
     @Test
@@ -48,25 +53,48 @@ class BinderTest {
 
         Binder binder = new Binder(engine);
 
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("missing")
-                    .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+                        .statement()));
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("trips")
-                    .where("missing", Comparison.EQUALS, 10L)
-                    .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+                        .where("missing", Comparison.EQUALS, 10L)
+                        .statement()));
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("trips")
-                    .where("distance", Comparison.EQUALS, "x")
-                    .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bind(
+                        .where("distance", Comparison.EQUALS, "x")
+                        .statement()));
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.createTable("duplicates")
-                    .addColumn("a", ColumnType.STRING)
-                    .addColumn("a", ColumnType.LONG)
-                    .statement()));
+                        .addColumn("a", ColumnType.STRING)
+                        .addColumn("a", ColumnType.LONG)
+                        .statement()));
+    }
+
+    @Test
+    void invalidDeleteStatementsThrow(@TempDir Path tempDir) {
+        StorageEngine engine = new StorageEngine(tempDir);
+        createTableWithCatalog(engine, "trips", tripsColumns);
+
+        Binder binder = new Binder(engine);
+
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+                    engine.viewCatalogForTesting(),
+                    Statement.delete("missing")
+                        .statement()));
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+                    engine.viewCatalogForTesting(),
+                    Statement.delete("trips")
+                        .where("missing", Comparison.EQUALS, 10L)
+                        .statement()));
+        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+                    engine.viewCatalogForTesting(),
+                    Statement.delete("trips")
+                        .where("distance", Comparison.EQUALS, "not a long")
+                        .statement()));
     }
 }

@@ -32,6 +32,23 @@ class SqlParserTest {
     }
 
     @Test
+    void parsesDeleteStatementsWithAndWithoutWhere() {
+        SqlParser parser = new SqlParser();
+
+        List<Statement> statements = parser.parse("""
+                DELETE FROM trips;
+                DELETE FROM trips WHERE distance > 100;
+                """);
+
+        int index = 0;
+
+        assertEquals(Statement.delete("trips").statement(), statements.get(index++));
+        assertEquals(Statement.delete("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(),
+                statements.get(index++));
+
+    }
+
+    @Test
     void parsesNumbersCorrect() {
         SqlParser parser = new SqlParser();
 

@@ -67,9 +67,9 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
                 ? List.of()
                 : (List<String>) visit(context.columnList());
 
-        Optional<Statement.Select.Predicate> predicate = context.predicate() == null
-                ? Optional.empty()
-                : Optional.of((Statement.Select.Predicate) visit(context.predicate()));
+        Optional<Statement.Predicate> predicate = Optional
+            .ofNullable(context.predicate())
+            .map(p -> (Statement.Predicate) visit(p));
 
         Optional<Integer> limit = Optional
             .ofNullable(context.limit())
@@ -80,6 +80,18 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
             .columns(columnList)
             .where(predicate)
             .limit(limit)
+            .statement();
+    }
+
+    @Override
+    public Object visitDelete(SqlParser.DeleteContext context) {
+        Optional<Statement.Predicate> predicate = Optional
+            .ofNullable(context.predicate())
+            .map(p -> (Statement.Predicate) visit(p));
+
+        return Statement
+            .delete(context.IDENTIFIER().getText())
+            .where(predicate)
             .statement();
     }
 
@@ -94,7 +106,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
     // Builds a predicate from its column, operator, and literal.
     @Override
     public Object visitPredicate(SqlParser.PredicateContext context) {
-        return new Statement.Select.Predicate(
+        return new Statement.Predicate(
                 context.IDENTIFIER().getText(),
                 comparison(context.comparison.getText()),
                 visit(context.literal()));

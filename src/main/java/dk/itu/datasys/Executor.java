@@ -67,7 +67,7 @@ public final class Executor {
 
         try {
             Utils.logExceptions(LOGGER, "failed to bind statement", () ->
-                binder.bind(catalog, statement));
+                binder.bindStatement(catalog, statement));
 
             List<Object[]> result = switch (statement) {
                 case Statement.CreateTable create ->
@@ -75,14 +75,22 @@ public final class Executor {
                         engine.createTable(catalog, create.tableName(), create.columns());
                         return List.of();
                     });
+
                 case Statement.Copy copy ->
                     Utils.logExceptions(LOGGER, "failed to copy csv file", () -> {
                         engine.copyFromCsvFile(catalog, copy.tableName(), Path.of(copy.csvFilePath()));
                         return List.of();
                     });
+
                 case Statement.Select select ->
                     Utils.logExceptions(LOGGER, "failed to execute query", () ->
                         executeSelect(catalog, select));
+
+                case Statement.Delete delete ->
+                    Utils.logExceptions(LOGGER, "failed to execute delete", () -> {
+                        engine.deleteFromTable(catalog, delete.tableName(), delete.where());
+                        return List.of();
+                    });
             };
         
             return result;
@@ -94,7 +102,6 @@ public final class Executor {
 
     public List<Object[]> executeSelect(Catalog catalog, Statement.Select select) {
         long planningStart = System.nanoTime();
-        long startMs = System.currentTimeMillis();
 
         Plan plan = Utils.logExceptions(LOGGER, "failed to make plan", () ->
             planner.plan(catalog, select));
@@ -103,13 +110,13 @@ public final class Executor {
 
         double planningMs = (System.nanoTime() - planningStart) / 1_000_000.0;
 
+        long executionStart = System.nanoTime();
+
         Operator root = plan.root();
         List<Object[]> rows = new ArrayList<>();
-        long executionStart = System.nanoTime();
 
         Utils.logExceptions(LOGGER, "failed to open operations", () ->
             root.open());
-
         try {
             Utils.logExceptions(LOGGER, "failed to get rows from operations", () -> {
                 root.exhaust(rows);
@@ -119,25 +126,18 @@ public final class Executor {
                 root.close());
         }
 
-        long durationMs = System.currentTimeMillis() - startMs;
-        LOGGER.debug("query complete rows={} durationMs={}", rows.size(), durationMs);
-
         double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
         
         TableMeta tableMeta = catalog.tables.get(select.tableName());
-        int tableVersion = tableMeta.getVersion();
+
         double elapsedMs = planningMs + executionMs;
-        
-        
+
         LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-                 select.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableVersion, elapsedMs);        
-        
-         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
-                 planningMs, executionMs, elapsedMs);
-        
+            select.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableMeta.version, elapsedMs);
+        LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
+            planningMs, executionMs, elapsedMs);
                 
-                return rows;
-          
+        return rows;
     }
 
     public ScanStats getLastScanStats() {

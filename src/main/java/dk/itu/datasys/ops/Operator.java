@@ -91,8 +91,8 @@ public interface Operator {
 
         @Override
         public final void close() {
-            closeIntermediate();
             child.close();
+            closeIntermediate();
         }
 
         protected abstract void closeIntermediate();
@@ -132,8 +132,8 @@ public interface Operator {
 
         @Override
         public final void close() {
-            closeIntermediate();
             child.close();
+            closeIntermediate();
         }
 
         protected abstract void closeIntermediate();

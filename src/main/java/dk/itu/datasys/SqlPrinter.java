@@ -13,6 +13,7 @@ public final class SqlPrinter {
             case Statement.CreateTable create -> printCreateTable(create);
             case Statement.Copy copy -> printCopy(copy);
             case Statement.Select select -> printSelect(select);
+            case Statement.Delete delete -> printDelete(delete);
             default -> throw new IllegalArgumentException("unsupported statement: " + statement);
         };
     }
@@ -55,7 +56,7 @@ public final class SqlPrinter {
         sb.append(" FROM ").append(select.tableName());
 
         if (select.where().isPresent()) {
-            Statement.Select.Predicate predicate = select.where().get();
+            Statement.Predicate predicate = select.where().get();
             sb.append(" WHERE ")
               .append(predicate.columnName())
               .append(" ")
@@ -67,6 +68,24 @@ public final class SqlPrinter {
         if (select.limit().isPresent()) {
             sb.append(" LIMIT ")
               .append(select.limit().get());
+        }
+
+        sb.append(";");
+        return sb.toString();
+    }
+
+    private static String printDelete(Statement.Delete delete) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("DELETE FROM ").append(delete.tableName());
+
+        if (delete.where().isPresent()) {
+            Statement.Predicate predicate = delete.where().get();
+            sb.append(" WHERE ")
+              .append(predicate.columnName())
+              .append(" ")
+              .append(comparisonSql(predicate.comparison()))
+              .append(" ")
+              .append(literalSql(predicate.constant()));
         }
 
         sb.append(";");

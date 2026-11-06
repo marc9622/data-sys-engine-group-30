@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,6 +43,47 @@ class FrontDoorIT {
         assertEquals(2, lines.length);
         assertEquals("Odense,95,120.75", lines[0]);
         assertEquals("Odense,120.75", lines[1]);
+    }
+
+    @Test
+    void deleteScriptRunsThroughEngineExecutable(@TempDir Path tmp) throws IOException, InterruptedException {
+        Path script = tmp.resolve("delete.sql");
+        Files.writeString(script, """
+                CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);
+                COPY trips FROM '%s';
+                COPY trips FROM '%s';
+                DELETE FROM trips WHERE city = 'Copenhagen';
+                SELECT * FROM trips;
+                """.formatted(resource("trips.csv"), resource("trips.csv")));
+
+        String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString(); 
+        Process process = new ProcessBuilder(
+            javaExecutable,
+            "-cp", System.getProperty("java.class.path"),
+            "dk.itu.datasys.Engine",
+            "-f", script.toString())
+            .directory(tmp.toFile())
+            .start();
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0)
+            throw new AssertionError("Process exited with code " + exitCode + ", stderr: " + new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8));
+        
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String[] lines = stdout.split(System.lineSeparator());
+     
+        List<String> expected = tripsRows.stream()
+                .filter(row -> !row[0].equals("Copenhagen"))
+                .map(row -> "%s,%s,%s".formatted(row[0], row[1], row[2]))
+                .flatMap(row -> Stream.of(row, row))
+                .sorted()
+                .toList();
+
+        List<String> actual = Stream.of(lines)
+                .sorted()
+                .toList();
+        
+        assertEquals(expected, actual);
     }
 
     @Test

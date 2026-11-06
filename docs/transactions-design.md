@@ -16,11 +16,12 @@ Since each statements keeps its pinned catalog in memory, it is therby fine to o
 
 # The rewrite set:
 
-TBD
+A `partitionMayContain` has been added to `StorageEngine`, and is used both by the `Planner` and for deletion.
+All partitions without deleted partitions are left unaffected and remain in the catalog.
 
 # New version:
 
-TBD
+A delete statement that doesn't match any rows leave the partitions unchanged, but it still increments the version number and creates a new catalog file.
 
 # Partition placement:
 
