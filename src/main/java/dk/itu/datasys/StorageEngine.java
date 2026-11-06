@@ -54,7 +54,10 @@ public final class StorageEngine {
     private final Path catalogPath;
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private final int maxRowsPerPartition;
-    private Map<String, Integer> catalogBaseVersions = Map.of();
+
+    // When opening the catalog, we remember all the table versions store them here.
+    // This allows us to compare the versions when committing the catalog to detect conflicts.
+    private Map<String, Integer> tableBaseVersions = new HashMap<>();
 
     // ---------- Public API ----------
 
@@ -372,9 +375,9 @@ public final class StorageEngine {
         assert !catalogState.isOpen() : "a catalog is already open; close it before opening again";
 
         Catalog catalog = readOrCreateEmptyCatalog();
-        catalogBaseVersions = new HashMap<>();
-        for (Map.Entry<String, TableMeta> entry : catalog.tables.entrySet())
-            catalogBaseVersions.put(entry.getKey(), entry.getValue().version);
+        tableBaseVersions.clear();
+        catalog.tables.forEach((tableName, tableMeta) ->
+            tableBaseVersions.put(tableName, tableMeta.version));
 
         catalogState = CatalogState.OPEN_CLEAN;
         return catalog;
@@ -400,7 +403,7 @@ public final class StorageEngine {
             if (catalogState == CatalogState.OPEN_DIRTY)
                 commitCatalog(catalog);
         } finally {
-            catalogBaseVersions = Map.of();
+            tableBaseVersions = Map.of();
             catalogState = CatalogState.NONE;
         }
     }
@@ -730,33 +733,33 @@ public final class StorageEngine {
         }
     }
 
-    private void validateAndCommitCatalog(Catalog catalog, Path tempCatalogFilePath) {
-        Catalog currentCatalog;
+    private void validateAndCommitCatalog(Catalog newCatalog, Path tempCatalogFilePath) {
         try {
-            currentCatalog = readCatalogUnlocked();
-        } catch (FileNotFoundException e) {
-            currentCatalog = new Catalog();
-        }
+            Catalog realCatalog = readCatalogUnlocked();
 
-        // Validate every table that existed when this statement opened its snapshot.
-        // Only tables modified by this statement need to be checked for a conflict.
-        for (Map.Entry<String, Integer> base : catalogBaseVersions.entrySet()) {
-            TableMeta currentTable = currentCatalog.tables.get(base.getKey());
-            TableMeta candidateTable = catalog.tables.get(base.getKey());
-            if (candidateTable != null && candidateTable.version != base.getValue())
-                ensureTableVersionUnchanged(base.getKey(), base.getValue(), currentTable);
-        }
+            // Validate every table that existed when this statement opened its snapshot.
+            // Only tables modified by this statement need to be checked for a conflict.
+            tableBaseVersions.forEach((tableName, baseVersion) -> {
+                TableMeta realTable = realCatalog.tables.get(tableName);
+                TableMeta newTable = newCatalog.tables.get(tableName);
+                if (newTable.version != baseVersion)
+                    ensureTableVersionUnchanged(tableName, baseVersion, realTable);
+            });
 
-        // A table missing from the base snapshot was created by this statement.
-        // It conflicts if another writer created the same table in the meantime.
-        for (String tableName : catalog.tables.keySet()) {
-            if (!catalogBaseVersions.containsKey(tableName)) {
-                TableMeta currentTable = currentCatalog.tables.get(tableName);
-                if (currentTable != null) {
-                    LOGGER.error("conflict table={} base={} current={}", tableName, 0, currentTable.version);
-                    throw new ConflictException(tableName, 0, currentTable.version);
+            // A table missing from the base snapshot was created by this statement.
+            // It conflicts if another writer created the same table in the meantime.
+            for (String tableName : newCatalog.tables.keySet()) {
+                if (!tableBaseVersions.containsKey(tableName)) {
+                    TableMeta currentTable = realCatalog.tables.get(tableName);
+                    if (currentTable != null) {
+                        LOGGER.error("conflict table={} base={} current={}", tableName, 0, currentTable.version);
+                        throw new ConflictException(tableName, 0, currentTable.version);
+                    }
                 }
             }
+        } catch (FileNotFoundException e) {
+            // Someone deleted the catalog file while we performed the statement.
+            // So we can safely ignore the validation and just commit our new catalog.
         }
 
         renameReplaceTempCatalogUnlocked(tempCatalogFilePath);
