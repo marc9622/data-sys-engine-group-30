@@ -54,10 +54,7 @@ public final class StorageEngine {
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private final int maxRowsPerPartition;
 
-    /**
-     * Runs before a commit's validation. Production never touches it; tests can
-     * use it to control the schedule at the commit boundary.
-     */
+   
     Runnable beforeCommit = () -> {};
 
     // ---------- Public API ----------
