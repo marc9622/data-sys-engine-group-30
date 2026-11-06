@@ -54,6 +54,12 @@ public final class StorageEngine {
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private final int maxRowsPerPartition;
 
+    /**
+     * Runs before a commit's validation. Production never touches it; tests can
+     * use it to control the schedule at the commit boundary.
+     */
+    Runnable beforeCommit = () -> {};
+
     // ---------- Public API ----------
 
     /**
@@ -691,6 +697,8 @@ public final class StorageEngine {
         } catch (IOException e) {
             throw new RuntimeException("failed to write catalog", e);
         }
+
+        beforeCommit.run();
 
         File catalogLockFile = catalogPath.resolveSibling(catalogLockFileName).toFile();
 
