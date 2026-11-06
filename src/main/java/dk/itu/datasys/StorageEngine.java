@@ -692,21 +692,33 @@ public final class StorageEngine {
             throw new RuntimeException("failed to write catalog", e);
         }
 
-        File catalogLockFile = catalogPath.resolveSibling(catalogLockFileName).toFile();
+        try {
+            // TODO lock here
 
-        if (!IS_WINDOWS) {
-            renameReplaceTempCatalogUnlocked(tempCatalogFile.toPath());
-            return;
+            // TODO check if other threads have committed by checking if catalog still has the same previous version number
+
+            // TODO if conflict occurred, abort modification, i.e. delete temporary catalog and throw `ConflictException`
+
+            // (The Windows file locking is not technically not necessary when using process-owned in-memory-locks)
+            if (!IS_WINDOWS) {
+                renameReplaceTempCatalogUnlocked(tempCatalogFile.toPath());
+                return;
+            }
+
+            File catalogLockFile = catalogPath.resolveSibling(catalogLockFileName).toFile();
+
+            try (
+                RandomAccessFile raf = new RandomAccessFile(catalogLockFile, "rw");
+                FileChannel lockChannel = raf.getChannel();
+                FileLock _ = lockChannel.lock(0, Long.MAX_VALUE, false); // Blocks here until readers finish
+            ) {
+                renameReplaceTempCatalogUnlocked(tempCatalogFile.toPath());
+            } catch (IOException e) {
+                throw new RuntimeException("failed to lock catalog for writing", e);
+            }
         }
-
-        try (
-            RandomAccessFile raf = new RandomAccessFile(catalogLockFile, "rw");
-            FileChannel lockChannel = raf.getChannel();
-            FileLock _ = lockChannel.lock(0, Long.MAX_VALUE, false); // Blocks here until readers finish
-        ) {
-            renameReplaceTempCatalogUnlocked(tempCatalogFile.toPath());
-        } catch (IOException e) {
-            throw new RuntimeException("failed to lock catalog for writing", e);
+        finally {
+            // TODO unlock here
         }
     }
 
