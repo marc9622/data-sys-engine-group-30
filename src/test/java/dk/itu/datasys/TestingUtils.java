@@ -1,5 +1,7 @@
 package dk.itu.datasys;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,7 +28,16 @@ public final class TestingUtils {
             new ColumnSpec("distance", ColumnType.LONG),
             new ColumnSpec("price", ColumnType.DOUBLE));
 
-    public static final List<Object[]> tripsRows = parseCsvFile(resource("trips.csv"));
+    public static final List<Value[]> tripsRows = parseCsvFile(resource("trips.csv"));
+
+    public static int tripsColumnIndexOf(String columnName) {
+        for (int i = 0; i < tripsColumns.size(); i++) {
+            if (tripsColumns.get(i).name().equals(columnName)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("Column not found: " + columnName);
+    }
 
     public static Path resource(String name) {
         return Path.of("src/test/resources/" + name).toAbsolutePath();
@@ -37,7 +48,7 @@ public final class TestingUtils {
     }
 
     public static void copyFromCsvFileWithCatalog(StorageEngine engine, String tableName, Path csvFilePath) {
-        runWithCatalog(engine, (catalog) -> engine.copyFromCsvFile(catalog, tableName, csvFilePath));
+        runWithCatalog(engine, (catalog) -> engine.copyFromCsvFile(catalog, catalog.tableIndexOf(tableName).get(), csvFilePath));
     }
 
     @FunctionalInterface
@@ -58,14 +69,26 @@ public final class TestingUtils {
         }
     }
 
-    public static List<Object[]> parseCsvFile(Path path) {
-        List<Object[]> rows = new ArrayList<>();
+    public static void assertValueEquals(String expected, Value actual) {
+        assertEquals(expected, actual.anyToString().value());
+    }
+
+    public static void assertValueEquals(Long expected, Value actual) {
+        assertEquals(expected, actual.anyToLong().value());
+    }
+
+    public static void assertValueEquals(Double expected, Value actual) {
+        assertEquals(expected, actual.anyToDouble().value());
+    }
+
+    public static List<Value[]> parseCsvFile(Path path) {
+        List<Value[]> rows = new ArrayList<>();
 
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.US_ASCII)) {
             String line;
             while ((line = reader.readLine()) != null) {
-                Object[] parsed = switch (StorageEngine.parseCsvLine(line, tripsColumns)) {
-                    case ParseCsvLineResult.Success(Object[] row) -> row;
+                Value[] parsed = switch (StorageEngine.parseCsvLine(line, tripsColumns)) {
+                    case ParseCsvLineResult.Success(Value[] row) -> row;
                     case ParseCsvLineResult.Malformed m ->
                         throw m.toRuntimeException(path, rows.size());
                 };

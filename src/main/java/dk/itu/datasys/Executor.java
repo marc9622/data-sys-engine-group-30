@@ -1,15 +1,16 @@
 package dk.itu.datasys;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import dk.itu.datasys.Spec.Value;
 import dk.itu.datasys.StorageEngine.Catalog;
 import dk.itu.datasys.StorageEngine.ScanStats;
 import dk.itu.datasys.StorageEngine.TableMeta;
@@ -66,29 +67,29 @@ public final class Executor {
         Catalog catalog = engine.openCatalog();
 
         try {
-            Utils.logExceptions(LOGGER, "failed to bind statement", () ->
+            BoundStatement bound = Utils.logExceptions(LOGGER, "failed to bind statement", () ->
                 binder.bindStatement(catalog, statement));
 
-            List<Object[]> result = switch (statement) {
-                case Statement.CreateTable create ->
+            List<Object[]> result = switch (bound) {
+                case BoundStatement.CreateTable create ->
                     Utils.logExceptions(LOGGER, "failed to create table", () -> {
                         engine.createTable(catalog, create.tableName(), create.columns());
                         return List.of();
                     });
 
-                case Statement.Copy copy ->
+                case BoundStatement.Copy copy ->
                     Utils.logExceptions(LOGGER, "failed to copy csv file", () -> {
-                        engine.copyFromCsvFile(catalog, copy.tableName(), Path.of(copy.csvFilePath()));
+                        engine.copyFromCsvFile(catalog, copy.tableIndex(), copy.csvFilePath());
                         return List.of();
                     });
 
-                case Statement.Select select ->
+                case BoundStatement.Select select ->
                     Utils.logExceptions(LOGGER, "failed to execute query", () ->
                         executeSelect(catalog, select));
 
-                case Statement.Delete delete ->
+                case BoundStatement.Delete delete ->
                     Utils.logExceptions(LOGGER, "failed to execute delete", () -> {
-                        engine.deleteFromTable(catalog, delete.tableName(), delete.where());
+                        engine.deleteFromTable(catalog, delete.tableIndex(), delete.where());
                         return List.of();
                     });
             };
@@ -100,7 +101,7 @@ public final class Executor {
         }
     }
 
-    public List<Object[]> executeSelect(Catalog catalog, Statement.Select select) {
+    public List<Object[]> executeSelect(Catalog catalog, BoundStatement.Select select) {
         long planningStart = System.nanoTime();
 
         Plan plan = Utils.logExceptions(LOGGER, "failed to make plan", () ->
@@ -113,7 +114,7 @@ public final class Executor {
         long executionStart = System.nanoTime();
 
         Operator root = plan.root();
-        List<Object[]> rows = new ArrayList<>();
+        List<Value[]> rows = new ArrayList<>();
 
         Utils.logExceptions(LOGGER, "failed to open operations", () ->
             root.open());
@@ -128,16 +129,16 @@ public final class Executor {
 
         double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
         
-        TableMeta tableMeta = catalog.tables.get(select.tableName());
+        TableMeta tableMeta = catalog.tables.get(select.tableIndex());
 
         double elapsedMs = planningMs + executionMs;
 
         LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-            select.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableMeta.version, elapsedMs);
+            select.tableIndex(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableMeta.version, elapsedMs);
         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
             planningMs, executionMs, elapsedMs);
                 
-        return rows;
+        return rows.stream().map(row -> Stream.of(row).map(Value::toObject).toArray(Object[]::new)).toList();
     }
 
     public ScanStats getLastScanStats() {

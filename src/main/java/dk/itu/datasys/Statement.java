@@ -56,30 +56,28 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
         return new Copy(tableName, csvFilePath);
     }
 
-    public static record Predicate(String columnName, Comparison comparison, Object constant) {
-        public boolean matches(Object value, ColumnType type) {
-            return comparison.matches(value, constant, type);
-        }
-
+    public static record Predicate(String columnName, Comparison comparison, Value constant) {
         @Override
         public String toString() {
             return "Predicate[columnName=" + columnName + " comparison=" + comparison + " constant=" + constant + "]";
         }
     }
 
-    public static record Select(List<String> columns, String tableName, Optional<Predicate> where, Optional<Integer> limit) implements Statement {
+    public static record Select(Optional<List<String>> columnNames, String tableName, Optional<Predicate> where, Optional<Integer> limit) implements Statement {
         public Select(String tableName, Optional<Predicate> where, Optional<Integer> limit) {
-            this(List.of(), tableName, where, limit);
+            this(Optional.empty(), tableName, where, limit);
         }
 
         @Override
         public String toString() {
-            return "Select[columns=[" + String.join(" ", columns) + "] tableName=" + tableName + " where=" + where + " limit=" + limit + "]";
+            String columns = columnNames.isEmpty() ? "*" :
+                columnNames.get().stream().reduce("", (a, b) -> a + " " + b);
+            return "Select[columns=[" + columns + "] tableName=" + tableName + " where=" + where + " limit=" + limit + "]";
         }
 
         public static class Builder {
             private final String tableName;
-            private final List<String> columns = new ArrayList<>();
+            private final List<String> columnNames = new ArrayList<>();
             private Optional<Predicate> where = Optional.empty();
             private Optional<Integer> limit = Optional.empty();
 
@@ -88,12 +86,12 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
             }
 
             public Builder columns(List<String> columns) {
-                this.columns.addAll(columns);
+                this.columnNames.addAll(columns);
                 return this;
             }
 
             public Builder columns(String... columns) {
-                this.columns.addAll(List.of(columns));
+                this.columnNames.addAll(List.of(columns));
                 return this;
             }
 
@@ -102,8 +100,23 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
                 return this;
             }
 
-            public Builder where(String columnName, Comparison comparison, Object constant) {
+            public Builder where(String columnName, Comparison comparison, Value constant) {
                 this.where = Optional.of(new Predicate(columnName, comparison, constant));
+                return this;
+            }
+
+            public Builder where(String columnName, Comparison comparison, String constant) {
+                this.where = Optional.of(new Predicate(columnName, comparison, Value.of(constant)));
+                return this;
+            }
+
+            public Builder where(String columnName, Comparison comparison, long constant) {
+                this.where = Optional.of(new Predicate(columnName, comparison, Value.of(constant)));
+                return this;
+            }
+
+            public Builder where(String columnName, Comparison comparison, double constant) {
+                this.where = Optional.of(new Predicate(columnName, comparison, Value.of(constant)));
                 return this;
             }
 
@@ -118,16 +131,17 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
             }
 
             public Select statement() {
-                return new Select(List.copyOf(columns), tableName, where, limit);
+                Optional<List<String>> columns = columnNames.isEmpty() ? Optional.empty() : Optional.of(List.copyOf(columnNames));
+                return new Select(columns, tableName, where, limit);
             }
         }
     }
 
-    public static record Delete(String tableName, Optional<Predicate> where) implements Statement {
-        public Select getMatchingSelect() {
-            return new Select(List.of(), tableName, where, Optional.empty());
-        }
+    public static Select.Builder select(String tableName) {
+        return new Select.Builder(tableName);
+    }
 
+    public static record Delete(String tableName, Optional<Predicate> where) implements Statement {
         @Override
         public String toString() {
             return "Delete[tableName=" + tableName + " where=" + where + "]";
@@ -146,8 +160,23 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
                 return this;
             }
 
-            public Builder where(String columnName, Comparison comparison, Object constant) {
+            public Builder where(String columnName, Comparison comparison, Value constant) {
                 this.where = Optional.of(new Predicate(columnName, comparison, constant));
+                return this;
+            }
+
+            public Builder where(String columnName, Comparison comparison, String constant) {
+                this.where = Optional.of(new Predicate(columnName, comparison, Value.of(constant)));
+                return this;
+            }
+
+            public Builder where(String columnName, Comparison comparison, long constant) {
+                this.where = Optional.of(new Predicate(columnName, comparison, Value.of(constant)));
+                return this;
+            }
+
+            public Builder where(String columnName, Comparison comparison, double constant) {
+                this.where = Optional.of(new Predicate(columnName, comparison, Value.of(constant)));
                 return this;
             }
 
@@ -159,9 +188,5 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
 
     public static Delete.Builder delete(String tableName) {
         return new Delete.Builder(tableName);
-    }
-
-    public static Select.Builder select(String tableName) {
-        return new Select.Builder(tableName);
     }
 }

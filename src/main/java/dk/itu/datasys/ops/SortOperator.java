@@ -17,14 +17,14 @@ public final class SortOperator extends Operator.ExhaustIntermediate {
     public static enum Ordering {
         ASCENDING, DESCENDING;
 
-        public int compareNonNull(Object left, Object right, ColumnType type) {
+        public int compareNonNull(Value left, Value right) {
             Objects.requireNonNull(left);
             Objects.requireNonNull(right);
 
-            int result = Comparison.compareNonNull(left, right, type);
+            int cmp = left.compareAnyWithAny(right);
             return switch (this) {
-                case ASCENDING -> result;
-                case DESCENDING -> -result;
+                case ASCENDING -> cmp;
+                case DESCENDING -> -cmp;
             };
         }
     }
@@ -36,11 +36,9 @@ public final class SortOperator extends Operator.ExhaustIntermediate {
     }
 
     @Override
-    protected List<Object[]> openAndExhaustIntermediate(List<ColumnSpec> schema, List<Object[]> rows) {
-        ColumnType type = schema.get(column).type();
-
+    protected List<Value[]> openAndExhaustIntermediate(List<ColumnSpec> schema, List<Value[]> rows) {
         return rows.stream()
-            .sorted((l, r) -> ordering.compareNonNull(l[column], r[column], type))
+            .sorted((l, r) -> ordering.compareNonNull(l[column], r[column]))
             .toList();
     }
 

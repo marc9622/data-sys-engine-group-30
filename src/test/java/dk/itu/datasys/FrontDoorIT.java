@@ -73,8 +73,8 @@ class FrontDoorIT {
         String[] lines = stdout.split(System.lineSeparator());
      
         List<String> expected = tripsRows.stream()
-                .filter(row -> !row[0].equals("Copenhagen"))
-                .map(row -> "%s,%s,%s".formatted(row[0], row[1], row[2]))
+                .filter(row -> !row[0].toObject().equals("Copenhagen"))
+                .map(row -> "%s,%s,%s".formatted(row[0].toObject(), row[1].toObject(), row[2].toObject()))
                 .flatMap(row -> Stream.of(row, row))
                 .sorted()
                 .toList();

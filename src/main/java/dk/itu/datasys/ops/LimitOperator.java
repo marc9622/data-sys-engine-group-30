@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.Spec.Value;
 
 public final class LimitOperator extends Operator.RowWiseIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
@@ -28,7 +29,7 @@ public final class LimitOperator extends Operator.RowWiseIntermediate {
     }
 
     @Override
-    protected NextResult nextIntermediate(Object[] row) {
+    protected NextResult nextIntermediate(Value[] row) {
         if (rowsCurrent >= rowsMax)
             return NextResult.exhausted;
 

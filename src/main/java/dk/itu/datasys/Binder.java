@@ -1,5 +1,7 @@
 package dk.itu.datasys;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -9,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
-import dk.itu.datasys.Spec.ColumnType;
 import dk.itu.datasys.StorageEngine.Catalog;
 
 public final class Binder {
@@ -21,20 +22,21 @@ public final class Binder {
         this.engine = Objects.requireNonNull(engine, "engine");
     }
 
-    public void bindStatement(Catalog catalog, Statement s) {
+    public BoundStatement bindStatement(Catalog catalog, Statement s) {
         Objects.requireNonNull(s, "s");
 
-        switch (s) {
+        return switch (s) {
             case Statement.CreateTable create -> bindCreateTable(catalog, create);
             case Statement.Copy copy -> bindCopy(catalog, copy);
             case Statement.Select select -> bindSelect(catalog, select);
             case Statement.Delete delete -> bindDelete(catalog, delete);
-        }
+        };
     }
 
-    private void bindCreateTable(Catalog catalog, Statement.CreateTable create) {
+    private BoundStatement bindCreateTable(Catalog catalog, Statement.CreateTable create) {
         String table = create.tableName();
-        if (catalog.doesTableExist(table))
+
+        if (catalog.tableByName(table).isPresent())
             throw new IllegalArgumentException("table already exists: " + table);
 
         List<ColumnSpec> columns = create.columns();
@@ -51,27 +53,47 @@ public final class Binder {
         }
 
         LOGGER.debug("bound create table statement table={} columns={}", create.tableName(), columns.size());
+
+        return new BoundStatement.CreateTable(create.tableName(), create.columns());
     }
 
-    private void bindCopy(Catalog catalog, Statement.Copy copy) {
+    private BoundStatement bindCopy(Catalog catalog, Statement.Copy copy) {
         String table = copy.tableName();
-        if (!catalog.doesTableExist(table))
+
+        Optional<Integer> tableIndex = catalog.tableIndexOf(table);
+        if (tableIndex.isEmpty())
             throw new IllegalArgumentException("table does not exist: " + table);
 
         LOGGER.debug("bound copy statement table={} csvFilePath={}", table, copy.csvFilePath());
+
+        Path csvPath = Path.of(copy.csvFilePath());
+
+        return new BoundStatement.Copy(tableIndex.get(), csvPath);
     }
 
-    private void bindSelect(Catalog catalog, Statement.Select select) {
+    private BoundStatement bindSelect(Catalog catalog, Statement.Select select) {
         String table = select.tableName();
-        if (!catalog.doesTableExist(table))
-            throw new IllegalArgumentException("table does not exist: " + table);
 
-        List<ColumnSpec> schema = engine.schema(catalog, table);
+        int tableIndex = catalog.tableIndexOf(table).orElseThrow(() ->
+                new IllegalArgumentException("table does not exist: " + table));
+
+        List<ColumnSpec> schema = engine.schema(catalog, tableIndex);
         List<String> schemaNames = schema.stream().map(ColumnSpec::name).toList();
 
-        for (String column : select.columns()) {
-            if (schemaNames.stream().noneMatch(column::equals))
-                throw new IllegalArgumentException("unknown column: " + column);
+        Optional<List<Integer>> columnIndices;
+        if (select.columnNames().isEmpty()) {
+            columnIndices = Optional.empty();
+        }
+        else {
+            List<Integer> indices = new ArrayList<>();
+            for (String column : select.columnNames().get()) {
+                int columnIndex = schemaNames.indexOf(column);
+                if (columnIndex == -1)
+                    throw new IllegalArgumentException("unknown column: " + column);
+
+                indices.add(columnIndex);
+            }
+            columnIndices = Optional.of(indices);
         }
 
         Optional<Statement.Predicate> where = select.where();
@@ -84,10 +106,10 @@ public final class Binder {
         });
 
         String log = "bound select statement table=" + table;
-        if (select.columns().isEmpty())
+        if (select.columnNames().isEmpty())
             log += " columns=*";
         else
-            log += " columns=[" + String.join(" ", select.columns()) + "]";
+            log += " columns=[" + String.join(" ", select.columnNames().get()) + "]";
 
         if (where.isPresent())
             log += " where=" + where.get();
@@ -96,45 +118,48 @@ public final class Binder {
             log += " limit=" + limit.get();
 
         LOGGER.debug(log);
-        return; 
+
+        return new BoundStatement.Select(columnIndices, tableIndex, bindWhere(schema, where), limit);
     }
 
-    private void bindDelete(Catalog catalog, Statement.Delete delete) {
+    private BoundStatement.Delete bindDelete(Catalog catalog, Statement.Delete delete) {
         String table = delete.tableName();
-        if (!catalog.doesTableExist(table))
-            throw new IllegalArgumentException("table does not exist: " + table);
 
-        List<ColumnSpec> schema = engine.schema(catalog, table);
+        int tableIndex = catalog.tableIndexOf(table).orElseThrow(() ->
+                new IllegalArgumentException("table does not exist: " + table));
 
-        Optional<Statement.Predicate> where = delete.where();
-        bindWhere(schema, where);
+        List<ColumnSpec> schema = engine.schema(catalog, tableIndex);
+
+        Optional<BoundStatement.Predicate> where = bindWhere(schema, delete.where());
 
         if (where.isPresent())
             LOGGER.debug("bound delete statement table={} where={}", table, where.get());
         else
             LOGGER.debug("bound delete statement table={} where=none", table);
+
+        return new BoundStatement.Delete(tableIndex, where);
     }
 
-    private void bindWhere(List<ColumnSpec> schema, Optional<Statement.Predicate> where) {
+    private static Optional<BoundStatement.Predicate> bindWhere(List<ColumnSpec> schema, Optional<Statement.Predicate> where) {
         if (where.isEmpty())
-            return;
+            return Optional.empty();
 
         Statement.Predicate predicate = where.get();
 
-        ColumnSpec target = schema.stream()
-            .filter(c -> c.name().equals(predicate.columnName()))
-            .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("unknown column: " + predicate.columnName()));
+        int columnIndex = 0;
+        for (; true; columnIndex++) {
+            if (columnIndex == schema.size())
+                throw new IllegalArgumentException("unknown column: " + predicate.columnName());
 
-        if (!typesMatch(target.type(), predicate.constant()))
+            if (schema.get(columnIndex).name().equals(predicate.columnName()))
+                break;
+        }
+
+        if (predicate.constant().type() != schema.get(columnIndex).type())
             throw new IllegalArgumentException("constant type does not match column type");
-    }
 
-    private static boolean typesMatch(ColumnType columnType, Object constant) {
-        return switch (columnType) {
-            case STRING -> constant instanceof String;
-            case LONG -> constant instanceof Long;
-            case DOUBLE -> constant instanceof Double;
-        };
+        BoundStatement.Predicate bound = new BoundStatement.Predicate(columnIndex, predicate.comparison(), predicate.constant());
+
+        return Optional.of(bound);
     }
 }

@@ -127,7 +127,7 @@ public final class StorageEngine {
 
         long startMs = System.currentTimeMillis();
 
-        if (catalog.tables.containsKey(tableName))
+        if (catalog.tableByName(tableName).isPresent())
             throw new IllegalArgumentException("table already exists: " + tableName);
 
         // check duplicate column names
@@ -137,8 +137,7 @@ public final class StorageEngine {
                 throw new IllegalArgumentException("duplicate column name: " + c.name());
         }
 
-        TableMeta meta = new TableMeta(new ArrayList<>(columns));
-        catalog.tables.put(tableName, meta);
+        catalog.tables.add(new TableMeta(tableName, new ArrayList<>(columns)));
 
         long durationMs = System.currentTimeMillis() - startMs;
         LOGGER.debug("created table table={} cols={} durationMs={}", tableName, columns.size(), durationMs);
@@ -147,20 +146,17 @@ public final class StorageEngine {
     /**
      * Copies the data from a CSV file into an empty table.
      * The CSV file must have the same number of columns as the table, and the column types must match.
-     * @param tableName the name of the table to copy data into
+     * @param tableIndex the index of the table to copy data into
      * @param csvFilePath the path to the CSV file
      */
-    public void copyFromCsvFile(Catalog catalog, String tableName, Path csvFilePath) {
+    public void copyFromCsvFile(Catalog catalog, int tableIndex, Path csvFilePath) {
         markCatalog(); 
 
-        requireNonNull(tableName);
         requireNonNull(csvFilePath);
 
         long startMs = System.currentTimeMillis();
 
-        TableMeta table = catalog.tables.get(tableName);
-        if (table == null)
-            throw new IllegalArgumentException("unknown table: " + tableName);
+        TableMeta table = catalog.tables.get(tableIndex);
 
         table.version++;
 
@@ -172,25 +168,25 @@ public final class StorageEngine {
 
         try (BufferedReader r = Files.newBufferedReader(csvFilePath, StandardCharsets.US_ASCII)) {
             String line;
-            List<Object[]> buffer = new ArrayList<>();
+            List<Value[]> buffer = new ArrayList<>();
             while ((line = r.readLine()) != null) {
                 totalRows++;
 
-                Object[] parsed = switch (parseCsvLine(line, table.columns)) {
-                    case ParseCsvLineResult.Success(Object[] row) -> row;
+                Value[] parsed = switch (parseCsvLine(line, table.columns)) {
+                    case ParseCsvLineResult.Success(Value[] row) -> row;
                     case ParseCsvLineResult.Malformed m ->
                         throw m.toRuntimeException(csvFilePath, totalRows);
                 };
 
                 buffer.add(parsed);
                 if (buffer.size() >= maxRowsPerPartition) {
-                    writePartition(tableName, table, buffer, table.nextPartitionNumber++);
+                    writePartition(table, buffer, table.nextPartitionNumber++);
                     buffer.clear();
                 }
             }
 
             if (!buffer.isEmpty())
-                writePartition(tableName, table, buffer, table.nextPartitionNumber++);
+                writePartition(table, buffer, table.nextPartitionNumber++);
 
         } catch (IOException e) {
             throw new RuntimeException("io error copying file", e);
@@ -200,61 +196,49 @@ public final class StorageEngine {
 
         int newPartitions = table.nextPartitionNumber - previousNextPartitionNumber;
         LOGGER.debug("statement=COPY table={} rowsWritten={} newPartitions={} version={} durationMs={}",
-                tableName, totalRows, newPartitions, table.version, durationMs);
+                tableIndex, totalRows, newPartitions, table.version, durationMs);
     }
 
     /**
      * Deletes rows using copy-on-write.
      * Active partitions that cannot contain a match are left untouched.
      * Candidate partitions are replaced by newly written partitions and the old metadata is marked as deprecated.
-     * @param tableName the name of the table to delete from
+     * @param tableIndex the name of the table to delete from
      * @param predicate an optional predicate to filter rows to delete
      */
-    public int deleteFromTable(Catalog catalog, String tableName, Optional<Statement.Predicate> predicate) {
+    public int deleteFromTable(Catalog catalog, int tableIndex, Optional<BoundStatement.Predicate> predicate) {
         markCatalog();
 
-        requireNonNull(tableName);
+        requireNonNull(tableIndex);
         requireNonNull(predicate);
 
         long startMs = System.currentTimeMillis();
 
-        TableMeta table = catalog.tables.get(tableName);
-        if (table == null)
-            throw new IllegalArgumentException("unknown table: " + tableName);
-
-        List<ColumnSpec> schema = table.columns;
-        int predicateColumn = predicate
-                .map(p -> columnIndex(schema, p.columnName()))
-                .orElse(-1);
+        TableMeta table = catalog.tables.get(tableIndex);
 
         int partitionsDeprecated = 0;
-        List<Object[]> buffer = new ArrayList<>(maxRowsPerPartition);
+        List<Value[]> buffer = new ArrayList<>(maxRowsPerPartition);
 
         int rowsDeleted = 0;
         int previousNextPartitionNumber = table.nextPartitionNumber;
         int previousVersion = table.version;
         table.version++;
 
-        for (PartitionMeta partition : activePartitions(catalog, tableName)) {
+        for (PartitionMeta partition : activePartitions(catalog, tableIndex)) {
             boolean mayContain = predicate.isEmpty()
                     || partitionMayContain(
-                            partition.mins.get(predicateColumn),
-                            partition.maxs.get(predicateColumn),
+                            partition.stats.get(predicate.get().columnIndex()),
                             predicate.get().comparison(),
-                            predicate.get().constant(),
-                            schema.get(predicateColumn).type()
+                            predicate.get().constant()
                         );
 
             if (!mayContain)
                 continue;
 
             boolean anyDeleted = false;
-            for (Object[] row : readPartitionRows(catalog, tableName, partition)) {
+            for (Value[] row : readPartitionRows(catalog, tableIndex, partition)) {
                 boolean matches = predicate.isEmpty()
-                        || predicate.get().matches(
-                                row[predicateColumn],
-                                schema.get(predicateColumn).type()
-                            );
+                        || predicate.get().matchesNonNull(row[predicate.get().columnIndex()]);
 
                 if (matches) {
                     anyDeleted = true;
@@ -264,7 +248,7 @@ public final class StorageEngine {
 
                 buffer.add(row);
                 if (buffer.size() == maxRowsPerPartition) {
-                    writePartition(tableName, table, buffer, table.nextPartitionNumber++);
+                    writePartition(table, buffer, table.nextPartitionNumber++);
                     buffer.clear();
                 }
             }
@@ -276,38 +260,30 @@ public final class StorageEngine {
         }
 
         if (rowsDeleted >= 1 && !buffer.isEmpty())
-            writePartition(tableName, table, buffer, table.nextPartitionNumber++);
+            writePartition(table, buffer, table.nextPartitionNumber++);
 
         int partitionsWritten = table.nextPartitionNumber - previousNextPartitionNumber;
 
         long durationMs = System.currentTimeMillis() - startMs;
         LOGGER.debug("statement=DELETE table={} rowsDeleted={} affectedPartitions={} newPartitions={} version={} durationMs={}",
-                tableName, rowsDeleted, partitionsDeprecated, partitionsWritten, table.version, durationMs);
+                tableIndex, rowsDeleted, partitionsDeprecated, partitionsWritten, table.version, durationMs);
         return rowsDeleted;
-    }
-
-    private static int columnIndex(List<ColumnSpec> schema, String columnName) {
-        for (int index = 0; index < schema.size(); index++) {
-            if (schema.get(index).name().equals(columnName))
-                return index;
-        }
-        throw new IllegalArgumentException("unknown column: " + columnName);
     }
 
     /**
      * Reads all rows from one partition without applying a predicate.
      * Partition selection belongs to the planner; row filtering belongs to a FilterOperator.
-     * @param tableName the name of the table
+     * @param tableIndex the index of the table
      * @param partition the partition metadata to read
      */
-    public List<Object[]> readPartitionRows(Catalog catalog, String tableName, PartitionMeta partition) {
-        requireNonNull(tableName);
+    public List<Value[]> readPartitionRows(Catalog catalog, int tableIndex, PartitionMeta partition) {
+        requireNonNull(tableIndex);
         requireNonNull(partition);
 
-        TableMeta table = catalog.tables.get(tableName);
+        TableMeta table = catalog.tables.get(tableIndex);
 
         if (table == null)
-            throw new IllegalArgumentException("unknown table: " + tableName);
+            throw new IllegalArgumentException("unknown table: " + tableIndex);
 
         Path partFile = dataDir.resolve(partition.fileName);
         try (DataInputStream in = new DataInputStream(new FileInputStream(partFile.toFile()))) {
@@ -315,13 +291,13 @@ public final class StorageEngine {
             int cols = table.columns.size();
             readPartitionStats(in, table.columns, partition);
 
-            List<Object[]> colData = new ArrayList<>(cols);
+            List<Value[]> colData = new ArrayList<>(cols);
             for (ColumnSpec column : table.columns)
                 colData.add(readPartitionColumn(in, column.type(), rows));
 
-            List<Object[]> result = new ArrayList<>(rows);
+            List<Value[]> result = new ArrayList<>(rows);
             for (int r = 0; r < rows; r++) {
-                Object[] row = new Object[cols];
+                Value[] row = new Value[cols];
                 for (int c = 0; c < cols; c++)
                     row[c] = colData.get(c)[r];
                 result.add(row);
@@ -334,28 +310,25 @@ public final class StorageEngine {
 
     /**
      * Returns the schema (list of columns) for the given table.
-     * @param tableName the name of the table
+     * @param tableIndex the index of the table from `tableIndexOf`
      */
-    public List<ColumnSpec> schema(Catalog catalog, String tableName) {
-        requireNonNull(tableName);
+    public List<ColumnSpec> schema(Catalog catalog, int tableIndex) {
+        if (tableIndex > catalog.tables.size())
+            throw new IllegalArgumentException("invalid table index: " + tableIndex);
 
-        TableMeta table = catalog.tables.get(tableName);
-        if (table == null)
-            throw new IllegalArgumentException("unknown table: " + tableName);
-
-        return List.copyOf(table.columns);
+        return List.copyOf(catalog.tables.get(tableIndex).columns);
     }
 
     /**
      * Returns the table's partition metadata without reading partition data.
-     * @param tableName the name of the table
+     * @param tableIndex the index of the table
      */
-    public List<PartitionMeta> activePartitions(Catalog catalog, String tableName) {
-        requireNonNull(tableName);
+    public List<PartitionMeta> activePartitions(Catalog catalog, int tableIndex) {
+        requireNonNull(tableIndex);
 
-        TableMeta table = catalog.tables.get(tableName);
+        TableMeta table = catalog.tables.get(tableIndex);
         if (table == null)
-            throw new IllegalArgumentException("unknown table: " + tableName);
+            throw new IllegalArgumentException("unknown table: " + tableIndex);
 
         return table.partitions.stream()
             .filter(partition -> partition.deprecatedSince == null)
@@ -410,34 +383,19 @@ public final class StorageEngine {
 
     // ---------- Helpers ----------
 
-    static boolean partitionMayContain(Object pmin, Object pmax, Comparison cmp, Object constant, ColumnType type) {
-        if (pmin == null || pmax == null)
+    static boolean partitionMayContain(ColumnStats stats, Comparison cmp, Value constant) {
+        if (stats.min == null || stats.max == null)
             return true;
 
-        int cmin = compareObjects(constant, pmin, type);
-        int cmax = compareObjects(constant, pmax, type);
-
         return switch (cmp) {
-            case EQUALS -> (cmin >= 0 && cmax <= 0);
-            case LESS_THAN -> !(compareObjects(pmin, constant, type) >= 0); // prune if pmin >= constant
-            case GREATER_THAN -> !(compareObjects(pmax, constant, type) <= 0); // prune if pmax <= constant
-        };
-    }
-
-    private static int compareObjects(Object a, Object b, ColumnType type) {
-        if (a == null && b == null) return 0;
-        if (a == null) return -1;
-        if (b == null) return 1;
-
-        return switch (type) {
-            case STRING -> ((String) a).compareTo((String) b);
-            case LONG -> Long.compare(((Long) a), ((Long) b));
-            case DOUBLE -> Double.compare(((Double) a), ((Double) b));
+            case EQUALS -> stats.min.compareAnyWithAny(constant) <= 0 && stats.max.compareAnyWithAny(constant) >= 0; // prune if pmin > constant or pmax < constant
+            case LESS_THAN -> !(stats.min.compareAnyWithAny(constant) >= 0); // prune if pmin >= constant
+            case GREATER_THAN -> !(stats.max.compareAnyWithAny(constant) <= 0); // prune if pmax <= constant
         };
     }
 
     public static sealed interface ParseCsvLineResult permits ParseCsvLineResult.Success, ParseCsvLineResult.Malformed {
-        public static record Success(Object[] row) implements ParseCsvLineResult {}
+        public static record Success(Value[] row) implements ParseCsvLineResult {}
         public static record Malformed(int charNumber, String description, Throwable cause) implements ParseCsvLineResult {
             public RuntimeException toRuntimeException(Path filePath, int lineNumber) {
                 String message = "Malformed CSV in `" + filePath + "` at line " + lineNumber;
@@ -452,7 +410,7 @@ public final class StorageEngine {
             }
         }
 
-        public static ParseCsvLineResult success(Object[] row) { return new Success(row); }
+        public static ParseCsvLineResult success(Value[] row) { return new Success(row); }
         public static ParseCsvLineResult malformed(int charNumber, String description) { return new Malformed(charNumber, description, null); }
         public static ParseCsvLineResult malformed(int charNumber, String description, Throwable cause) { return new Malformed(charNumber, description, cause); }
     }
@@ -469,16 +427,16 @@ public final class StorageEngine {
             return ParseCsvLineResult.malformed(charNumber, "Line has " + fields.length + " field(s) but expected " + cols.size());
         }
 
-        Object[] parsed = new Object[fields.length];
+        Value[] parsed = new Value[fields.length];
         for (int i = 0; i < fields.length; i++) {
             String field = fields[i];
             ColumnType type = cols.get(i).type();
             try {
-                switch (type) {
-                    case STRING -> parsed[i] = field;
-                    case LONG -> parsed[i] = Long.valueOf(field);
-                    case DOUBLE -> parsed[i] = Double.valueOf(field);
-                }
+                parsed[i] = switch (type) {
+                    case STRING -> new Value.String(field);
+                    case LONG -> new Value.Long(Long.valueOf(field));
+                    case DOUBLE -> new Value.Double(Double.valueOf(field));
+                };
             } catch (NumberFormatException e) {
                 return ParseCsvLineResult.malformed(charNumber, "Field `" + field + "` cannot be parsed as " + type, e);
             }
@@ -487,122 +445,116 @@ public final class StorageEngine {
         return ParseCsvLineResult.success(parsed);
     }
 
-    static void encodeValue(DataOutputStream out, ColumnType t, Object v) throws IOException {
-        switch (t) {
-            case STRING -> {
-                byte[] bs = ((String) v).getBytes(StandardCharsets.US_ASCII);
+    static void encodeValue(DataOutputStream out, Value value) throws IOException {
+        switch (value) {
+            case Value.String(String s) -> {
+                byte[] bs = s.getBytes(StandardCharsets.US_ASCII);
                 out.writeInt(bs.length);
                 out.write(bs);
             }
-            case LONG -> out.writeLong((Long) v);
-            case DOUBLE -> out.writeDouble((Double) v);
+            case Value.Long(long l) -> out.writeLong(l);
+            case Value.Double(double d) -> out.writeDouble(d);
         }
     }
 
-    static Object decodeValue(DataInputStream in, ColumnType t) throws IOException {
+    static Value decodeValue(DataInputStream in, ColumnType t) throws IOException {
         return switch (t) {
             case STRING -> {
                 int len = in.readInt();
                 byte[] bs = new byte[len];
                 in.readFully(bs);
-                yield new String(bs, StandardCharsets.US_ASCII);
+                yield new Value.String(new String(bs, StandardCharsets.US_ASCII));
             }
-            case LONG -> in.readLong();
-            case DOUBLE -> in.readDouble();
+            case LONG -> new Value.Long(in.readLong());
+            case DOUBLE -> new Value.Double(in.readDouble());
         };
     }
 
-    PartitionMeta writePartition(String tableName, TableMeta table, List<Object[]> rows, int partitionIdx) {
-        String name = partitionFileName(tableName, partitionIdx);
-        PartitionMeta partition = writePartitionFile(tableName, table, rows, name);
-        table.partitions.add(partition);
-        return partition;
-    }
+    PartitionMeta writePartition(TableMeta table, List<Value[]> rows, int partitionIdx) {
+        String name = partitionFileName(table.name, partitionIdx);
 
-    private PartitionMeta writePartitionFile(String tableName, TableMeta table, List<Object[]> rows, String fname) {
-        Path out = dataDir.resolve(fname);
-        try (DataOutputStream outp = new DataOutputStream(new FileOutputStream(out.toFile()))) {
+        Path path = dataDir.resolve(partitionFileName(table.name, partitionIdx));
+
+        List<ColumnStats> stats = calcPartitionStats(rows, table.columns);
+        PartitionMeta partition;
+
+        try (DataOutputStream out = new DataOutputStream(new FileOutputStream(path.toFile()))) {
             int rowsCount = rows.size();
             int cols = table.columns.size();
-            outp.writeInt(rowsCount);
-
-            List<Object> mins = partitionStats(rows, table.columns, PartitionStatKind.MINIMUM);
-            List<Object> maxs = partitionStats(rows, table.columns, PartitionStatKind.MAXIMUM);
+            out.writeInt(rowsCount);
 
             // Store statistics in the partition header before the column data.
             for (int c = 0; c < cols; c++) {
-                ColumnType t = table.columns.get(c).type();
-                encodeValue(outp, t, mins.get(c));
-                encodeValue(outp, t, maxs.get(c));
+                encodeValue(out, stats.get(c).min);
+                encodeValue(out, stats.get(c).max);
             }
 
             // write column-wise: for each column write all row values
             for (int c = 0; c < cols; c++) {
-                ColumnType t = table.columns.get(c).type();
-                writePartitionColumn(outp, t, rows, c);
+                for (Value[] row : rows)
+                    encodeValue(out, row[c]);
             }
 
-            PartitionMeta pm = new PartitionMeta(fname, mins, maxs, rowsCount);
-
-            // log per-column min/max
-            for (int c = 0; c < table.columns.size(); c++) {
-                String col = table.columns.get(c).name();
-                LOGGER.debug("table={} partition={} column={} min={} max={}", tableName, fname, col, mins.get(c), maxs.get(c));
-            }
-
-            return pm;
+            partition = new PartitionMeta(name, stats, rowsCount);
         } catch (IOException e) {
             throw new RuntimeException("failed writing partition", e);
         }
+
+        for (int c = 0; c < table.columns.size(); c++) {
+            String col = table.columns.get(c).name();
+            LOGGER.debug("table={} partition={} column={} min={} max={}",
+                    table.name, name, col, stats.get(c).min, stats.get(c).max);
+        }
+
+        table.partitions.add(partition);
+        return partition;
     }
 
-    private static void writePartitionColumn(DataOutputStream outp, ColumnType t, List<Object[]> rows, int colIndex) throws IOException {
-        for (Object[] row : rows) {
-            Object val = row[colIndex];
+    static List<ColumnStats> calcPartitionStats(List<Value[]> rows, List<ColumnSpec> columns) {
+        List<ColumnStats> stats = new ArrayList<>(columns.size());
+        for (int column = 0; column < columns.size(); column++) {
+            final int columnIdx = column;
+            Stream<Value> values = rows.stream().map(row -> row[columnIdx]);
 
-            encodeValue(outp, t, val);
+            ColumnStats s = switch (columns.get(column).type()) {
+                case STRING -> calcColumnStats(values.map(Value::anyToString).iterator());
+                case LONG -> calcColumnStats(values.map(Value::anyToLong).iterator());
+                case DOUBLE -> calcColumnStats(values.map(Value::anyToDouble).iterator());
+            };
+            stats.add(s);
         }
-    }
 
-    static enum PartitionStatKind {
-        MINIMUM,
-        MAXIMUM;
-
-        private int compare(Object a, Object b, ColumnType type) {
-            int cmp = compareObjects(a, b, type);
-            return this == MINIMUM ? cmp : -cmp;
-        }
-    }
-
-    static List<Object> partitionStats(List<Object[]> rows, List<ColumnSpec> columns, PartitionStatKind statKind) {
-        List<Object> stats = new ArrayList<>(Arrays.asList(new Object[columns.size()]));
-        for (Object[] row : rows) {
-            for (int c = 0; c < columns.size(); c++) {
-                Object value = row[c];
-                Object current = stats.get(c);
-                ColumnType type = columns.get(c).type();
-                if (current == null || statKind.compare(value, current, type) < 0) {
-                    stats.set(c, value);
-                }
-            }
-        }
         return stats;
     }
 
-    private static void readPartitionStats(DataInputStream in, List<ColumnSpec> columns, PartitionMeta partition) throws IOException {
-        partition.mins = new ArrayList<>(columns.size());
-        partition.maxs = new ArrayList<>(columns.size());
-        for (ColumnSpec column : columns) {
-            partition.mins.add(decodeValue(in, column.type()));
-            partition.maxs.add(decodeValue(in, column.type()));
+    private static <T extends Value.Comparable<T>> ColumnStats calcColumnStats(Iterator<T> values) {
+        T min = null, max = null;
+
+        if (values.hasNext()) {
+            T value = values.next();
+            min = value;
+            max = value;
         }
+
+        while (values.hasNext()) {
+            T value = values.next();
+            if (value.compareWith(min) < 0) min = value;
+            if (value.compareWith(max) > 0) max = value;
+        }
+
+        return new ColumnStats(min, max);
     }
 
-    private static Object[] readPartitionColumn(DataInputStream in, ColumnType t, int rows) throws IOException {
-        Object[] values = new Object[rows];
-        for (int r = 0; r < rows; r++) {
+    private static void readPartitionStats(DataInputStream in, List<ColumnSpec> columns, PartitionMeta partition) throws IOException {
+        partition.stats = new ArrayList<>(columns.size());
+        for (ColumnSpec column : columns)
+            partition.stats.add(new ColumnStats(decodeValue(in, column.type()), decodeValue(in, column.type())));
+    }
+
+    private static Value[] readPartitionColumn(DataInputStream in, ColumnType t, int rows) throws IOException {
+        Value[] values = new Value[rows];
+        for (int r = 0; r < rows; r++)
             values[r] = decodeValue(in, t);
-        }
         return values;
     }
 
@@ -625,52 +577,20 @@ public final class StorageEngine {
     private Catalog readCatalog() throws FileNotFoundException {
         File catalogLockFile = catalogPath.resolveSibling(catalogLockFileName).toFile();
 
-        Catalog catalog;
-        if (!IS_WINDOWS) {
-            catalog = readCatalogUnlocked();
-            normalizePartitionStats(catalog);
-            return catalog;
-        }
+        if (!IS_WINDOWS)
+            return readCatalogUnlocked();
 
         try (
             RandomAccessFile raf = new RandomAccessFile(catalogLockFile, "rw");
             FileChannel lockChannel = raf.getChannel();
             FileLock _ = lockChannel.lock(0, Long.MAX_VALUE, true)
         ) {
-            catalog = readCatalogUnlocked();
-            normalizePartitionStats(catalog);
-            return catalog;
+            return readCatalogUnlocked();
         } catch (FileNotFoundException e) {
             throw e;
         } catch (IOException e) {
             throw new RuntimeException("failed to lock catalog for reading", e);
         }
-    }
-
-    /**
-     * Normalizes the partition statistics to ensure that they are of the correct type. This is necessary because the statistics may be read from a JSON file, which does not preserve the original types of the values.
-     */
-    private static void normalizePartitionStats(Catalog catalog) {
-        for (TableMeta table : catalog.tables.values()) {
-            for (PartitionMeta partition : table.partitions) {
-                for (int columnIndex = 0; columnIndex < table.columns.size(); columnIndex++) {
-                    ColumnType type = table.columns.get(columnIndex).type();
-                    partition.mins.set(columnIndex, normalizeStat(partition.mins.get(columnIndex), type));
-                    partition.maxs.set(columnIndex, normalizeStat(partition.maxs.get(columnIndex), type));
-                }
-            }
-        }
-    }
-
-    private static Object normalizeStat(Object value, ColumnType type) {
-        if (value == null)
-            return null;
-
-        return switch (type) {
-            case STRING -> value.toString();
-            case LONG -> ((Number) value).longValue();
-            case DOUBLE -> ((Number) value).doubleValue();
-        };
     }
 
     private Catalog readCatalogUnlocked() throws FileNotFoundException {
@@ -722,12 +642,22 @@ public final class StorageEngine {
     // ---------- Metadata Classes ----------
 
     public static final class Catalog {
-        public Map<String, TableMeta> tables = new HashMap<>();
+        public List<TableMeta> tables = new ArrayList<>();
 
         public Catalog() {} // Needed for deserialization
 
-        public boolean doesTableExist(String name) {
-            return tables.containsKey(name);
+        public Optional<Integer> tableIndexOf(String name) {
+            Iterator<TableMeta> names = tables.iterator();
+            for (int i = 0; names.hasNext(); i++) {
+                if (names.next().name.equals(name))
+                    return Optional.of(i);
+            }
+
+            return Optional.empty();
+        }
+
+        public Optional<TableMeta> tableByName(String name) {
+            return tableIndexOf(name).map(i -> tables.get(i));
         }
 
         @Override
@@ -746,13 +676,17 @@ public final class StorageEngine {
     }
 
     public static final class TableMeta {
+        public final String name;
         public int version = 0;
         public int nextPartitionNumber = 0;
         public final List<ColumnSpec> columns = new ArrayList<>();
         public final List<PartitionMeta> partitions = new ArrayList<>();
 
-        public TableMeta() {} // Needed for deserialization
-        public TableMeta(List<ColumnSpec> columns) {
+        public TableMeta() { // Needed for deserialization
+            this.name = null;
+        }
+        public TableMeta(String name, List<ColumnSpec> columns) {
+            this.name = name;
             this.columns.addAll(columns);
         }
 
@@ -776,8 +710,7 @@ public final class StorageEngine {
 
     public static final class PartitionMeta {
         public final String fileName;
-        public List<Object> mins;
-        public List<Object> maxs;
+        public List<ColumnStats> stats;
         public final int rowCount;
         public Integer deprecatedSince = null;
 
@@ -785,10 +718,9 @@ public final class StorageEngine {
             this.fileName = null;
             this.rowCount = 0;
         }
-        public PartitionMeta(String fileName, List<Object> mins, List<Object> maxs, int rowCount) {
+        public PartitionMeta(String fileName, List<ColumnStats> stats, int rowCount) {
             this.fileName = fileName;
-            this.mins = mins;
-            this.maxs = maxs;
+            this.stats = stats;
             this.rowCount = rowCount;
         }
 
@@ -804,19 +736,24 @@ public final class StorageEngine {
             if (!(o instanceof PartitionMeta that)) return false;
             return rowCount == that.rowCount &&
                    Objects.equals(fileName, that.fileName) &&
-                   Objects.equals(mins, that.mins) &&
-                   Objects.equals(maxs, that.maxs);
+                   Objects.equals(stats, that.stats);
         }
 
         @Override
         public String toString() {
             return "PartitionMeta{" +
-                    "fileName='" + fileName + '\'' +
-                    ", mins=" + mins +
-                    ", maxs=" + maxs +
+                    "fileName='" + fileName + "'" +
+                    ", stats=" + stats +
                     ", rowCount=" + rowCount +
                     ", deprecatedSince=" + deprecatedSince +
-                    '}';
+                    "}";
+        }
+    }
+
+    static record ColumnStats(Value min, Value max) {
+        @Override
+        public String toString() {
+            return "ColumnStats[min=" + min + " max=" + max + "]";
         }
     }
 }
