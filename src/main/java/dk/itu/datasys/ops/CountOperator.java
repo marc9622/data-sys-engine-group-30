@@ -19,8 +19,8 @@ public final class CountOperator extends Operator.ExhaustIntermediate {
     }
 
     @Override
-    protected List<Object[]> openAndExhaustIntermediate(List<ColumnSpec> childSchema, List<Object[]> childRows) {
-        return List.<Object[]>of(new Object[] {(long) childRows.size()});
+    protected List<Value[]> openAndExhaustIntermediate(List<ColumnSpec> childSchema, List<Value[]> childRows) {
+        return List.<Value[]>of(Value.arrayOf(childRows.size()));
     }
 
     @Override

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.Catalog;
+import dk.itu.datasys.StorageEngine.ColumnStats;
 import dk.itu.datasys.TestingUtils.Streams;
 
 class StorageEngineIT {
@@ -79,9 +80,9 @@ class StorageEngineIT {
         Path csv = resource("trips.csv");
         copyFromCsvFileWithCatalog(e, tripsName, csv);
 
-        Object[] testedRow = tripsRows
+        Value[] testedRow = tripsRows
             .stream()
-            .filter(row -> row[0].equals("Odense"))
+            .filter(row -> row[0].toObject().equals("Odense"))
             .findAny()
             .get();
 
@@ -104,8 +105,8 @@ class StorageEngineIT {
                     ).get(0);
             assertEquals(1, rows.size());
 
-            Object[] expected = mapping.stream().map(i -> testedRow[i]).toArray();
-            Object[] actual = rows.get(0);
+            Value[] expected = mapping.stream().map(i -> testedRow[i]).toArray(Value[]::new);
+            Value[] actual = Value.arrayFromObjects(rows.get(0));
             assertArrayEquals(expected, actual);
         }
     }
@@ -122,11 +123,12 @@ class StorageEngineIT {
 
         for (int limit : List.of(0, 5, 10)) {
             List<Object[]> actualRows = ex.executeScript("SELECT * FROM trips WHERE distance > 20 LIMIT " + limit + ";").get(0);
-            List<Object[]> expectedRows = tripsRows.stream().filter(r -> (Long) r[1] > 20).limit(limit).toList();
+            List<Value[]> expectedRows = tripsRows.stream().filter(r -> r[1].anyToLong().value() > 20).limit(limit).toList();
 
             assertEquals(expectedRows.size(), actualRows.size());
             for (int i = 0; i < expectedRows.size(); i++) {
-                assertArrayEquals(expectedRows.get(i), actualRows.get(i));
+                Value[] actual = Value.arrayFromObjects(actualRows.get(i));
+                assertArrayEquals(expectedRows.get(i), actual);
             }
         }
     }
@@ -159,19 +161,20 @@ class StorageEngineIT {
         Path csv = resource("trips.csv");
         copyFromCsvFileWithCatalog(e, "trips", csv);
 
-        StorageEngine.TableMeta tm = e.openCatalog().tables.get("trips");
+        StorageEngine.TableMeta tm = e.openCatalog().tableByName("trips").get();
         assertEquals(4, tm.partitions.size());
         // check distance min/max per partition (expected from original order)
         long[] expMin = new long[] {12, 95, 31, 88};
         long[] expMax = new long[] {187, 140, 210, 299};
         for (int i = 0; i < 4; i++) {
-            assertEquals(expMin[i], tm.partitions.get(i).mins.get(1));
-            assertEquals(expMax[i], tm.partitions.get(i).maxs.get(1));
+            ColumnStats stats = tm.partitions.get(i).stats.get(1);
+            assertValueEquals(expMin[i], stats.min());
+            assertValueEquals(expMax[i], stats.max());
         }
 
         // data persistence: new engine should read same partitions
         StorageEngine e2 = new StorageEngine(tmp);
-        StorageEngine.TableMeta tm2 = e2.openCatalog().tables.get("trips");
+        StorageEngine.TableMeta tm2 = e2.openCatalog().tableByName("trips").get();
         assertEquals(4, tm2.partitions.size());
     }
 
@@ -238,7 +241,7 @@ class StorageEngineIT {
         {
             Catalog catalog = e.openCatalog();
             assertTrue(e.isCatalogOpenForTesting());
-            e.copyFromCsvFile(catalog, "t", resource("trips.csv"));
+            e.copyFromCsvFile(catalog, 0, resource("trips.csv"));
             assertTrue(e.isCatalogOpenForTesting());
             e.closeCatalog(catalog);
         }
@@ -248,7 +251,7 @@ class StorageEngineIT {
         {
             Catalog catalog = e.openCatalog();
             assertTrue(e.isCatalogOpenForTesting());
-            ex.executeSelect(catalog, Statement.select("t").statement());
+            ex.executeSelect(catalog, BoundStatement.select(0).statement());
             assertTrue(e.isCatalogOpenForTesting());
             e.closeCatalog(catalog);
         }
@@ -268,9 +271,9 @@ class StorageEngineIT {
             "SELECT * FROM t WHERE distance > 100;");
 
         List<Object[]> actual = results.getLast();
-        List<Object[]> expected = parseCsvFile(resource("trips.csv"))
+        List<Value[]> expected = parseCsvFile(resource("trips.csv"))
             .stream()
-            .filter(r -> (Long) r[1] > 100)
+            .filter(r -> r[1].anyToLong().value() > 100)
             .flatMap(r -> Stream.of(r, r))
             .toList();
 
@@ -308,7 +311,7 @@ class StorageEngineIT {
         int tripsSize = parseCsvFile(resource("trips.csv")).size();
 
         int amountCopenhagenInTrips = (int) parseCsvFile(resource("trips.csv")).stream()
-            .filter(r -> r[0].equals("Copenhagen"))
+            .filter(r -> r[0].toObject().equals("Copenhagen"))
             .count();
 
         int version = -1;
@@ -345,14 +348,14 @@ class StorageEngineIT {
         ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
         ex.executeScript("COPY trips FROM '" + resource("trips_sorted.csv") + "';");
 
-        List<String> originalFiles = e.viewCatalogForTesting().tables.get("trips").partitions.stream()
+        List<String> originalFiles = e.viewCatalogForTesting().tableByName("trips").get().partitions.stream()
                 .map(partition -> partition.fileName)
                 .toList();
         assertEquals(IntStream.range(0, 4).mapToObj(this::tripsPartitionName).toList(), originalFiles);
 
         ex.executeScript("DELETE FROM trips WHERE distance > 150;");
 
-        StorageEngine.TableMeta table = e.viewCatalogForTesting().tables.get("trips");
+        StorageEngine.TableMeta table = e.viewCatalogForTesting().tableByName("trips").get();
 
         // partions 0 and 1 are pruned, 2 and 3 are rewritten.
         assertEquals(2, table.version);
@@ -382,7 +385,7 @@ class StorageEngineIT {
         firstExecutor.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
         firstExecutor.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
         firstExecutor.executeScript("DELETE FROM trips WHERE distance > 200;");
-        int expectedRows = parseCsvFile(resource("trips.csv")).stream().filter(r -> (Long) r[1] <= 200).toList().size();
+        int expectedRows = parseCsvFile(resource("trips.csv")).stream().filter(r -> r[1].anyToLong().value() <= 200).toList().size();
 
         assertTableVersion(2, first, "trips");
 
@@ -407,26 +410,26 @@ class StorageEngineIT {
         ex.executeScript("DELETE FROM trips WHERE city = 'Berlin';");
 
         Catalog catalog1 = e.viewCatalogForTesting();
-        StorageEngine.TableMeta table1 = catalog1.tables.get("trips");
+        StorageEngine.TableMeta table1 = catalog1.tableByName("trips").get();
 
         assertEquals(1, table1.partitions.size());
-        assertEquals(1, e.activePartitions(catalog1, "trips").size());
+        assertEquals(1, e.activePartitions(catalog1, 0).size());
         assertEquals(tripsRows.size(), ex.executeScript("SELECT * FROM trips;").getFirst().size());
 
         // This should delete all rows; no partition should be created
         ex.executeScript("DELETE FROM trips;");
 
         Catalog catalog2 = e.viewCatalogForTesting();
-        StorageEngine.TableMeta table2 = catalog2.tables.get("trips");
+        StorageEngine.TableMeta table2 = catalog2.tableByName("trips").get();
 
         assertEquals(1, table2.partitions.size());
-        assertEquals(0, e.activePartitions(catalog2, "trips").size());
+        assertEquals(0, e.activePartitions(catalog2, 0).size());
         assertFalse(Files.exists(tmp.resolve(tripsPartitionName(1))));
         assertEquals(0, ex.executeScript("SELECT * FROM trips;").getFirst().size());
     }
 
     void assertTableVersion(int expected, StorageEngine engine, String tableName) {
-        int actual = engine.viewCatalogForTesting().tables.get(tableName).version;
+        int actual = engine.viewCatalogForTesting().tableByName(tableName).get().version;
         assertEquals(expected, actual, "Expected table version " + expected + ", but got " + actual);
     }
 

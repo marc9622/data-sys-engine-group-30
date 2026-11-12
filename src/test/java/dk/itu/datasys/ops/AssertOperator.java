@@ -5,15 +5,16 @@ import java.util.List;
 import java.util.Objects;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.Spec.Value;
 
 public final class AssertOperator implements Operator {
 
     private final Operator actual;
-    private final List<Object[]> rowsExpected;
+    private final List<Value[]> rowsExpected;
     private int rowsCurrent = 0;
     private boolean isOpen = false;
 
-    public AssertOperator(Operator actual, List<Object[]> rowsExpected) {
+    public AssertOperator(Operator actual, List<Value[]> rowsExpected) {
         this.actual = actual;
         this.rowsExpected = Objects.requireNonNull(rowsExpected);
     }
@@ -32,10 +33,10 @@ public final class AssertOperator implements Operator {
     }
 
     @Override
-    public Object[] next() {
+    public Value[] next() {
         assertIsOpen();
 
-        Object[] rowActual = actual.next();
+        Value[] rowActual = actual.next();
         if (rowActual == null) {
             if (rowsCurrent != rowsExpected.size())
                 throw new AssertionError("Fewer rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
@@ -43,12 +44,14 @@ public final class AssertOperator implements Operator {
             return null;
         }
 
-        if (rowsCurrent == rowsExpected.size())
+        int rowIdx = rowsCurrent++;
+
+        if (rowsCurrent > rowsExpected.size())
             throw new AssertionError("More rows (" + rowsCurrent + ") returned than expected (" + rowsExpected.size() + ")");
 
-        Object[] rowExpected = rowsExpected.get(rowsCurrent++);
+        Value[] rowExpected = rowsExpected.get(rowIdx);
         if (!Arrays.equals(rowActual, rowExpected))
-            throw new AssertionError("Row " + (rowsCurrent - 1) + " does not match expected row. Expected: " + Arrays.toString(rowExpected) + ", Actual: " + Arrays.toString(rowActual));
+            throw new AssertionError("Row " + rowIdx + " does not match expected row. Expected: " + Arrays.toString(rowExpected) + ", Actual: " + Arrays.toString(rowActual));
 
         return rowActual;
     }

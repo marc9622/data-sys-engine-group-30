@@ -7,8 +7,8 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.Catalog;
+import dk.itu.datasys.StorageEngine.ColumnStats;
 import dk.itu.datasys.ops.FilterOperator;
 import dk.itu.datasys.ops.LimitOperator;
 import dk.itu.datasys.ops.Operator;
@@ -24,36 +24,32 @@ public final class Planner {
         this.engine = Objects.requireNonNull(engine, "engine");
     }
 
-    public Plan plan(Catalog catalog, Statement.Select select) {
+    public Plan plan(Catalog catalog, BoundStatement.Select select) {
         Objects.requireNonNull(select, "select");
 
-        String tableName = select.tableName();
-        List<StorageEngine.PartitionMeta> allPartitions = engine.activePartitions(catalog, tableName);
+        int tableIndex = select.tableIndex();
+        List<StorageEngine.PartitionMeta> allPartitions = engine.activePartitions(catalog, tableIndex);
         List<StorageEngine.PartitionMeta> survivingPartitions = new ArrayList<>();
 
         if (select.where().isEmpty()) {
             survivingPartitions.addAll(allPartitions);
 
-            LOGGER.debug("table={} no-where partitions={} decision=READ", tableName, survivingPartitions.size());
+            LOGGER.debug("table={} no-where partitions={} decision=READ", tableIndex, survivingPartitions.size());
         }
         else {
-            Statement.Predicate predicate = select.where().get();
-            List<ColumnSpec> schema = engine.schema(catalog, tableName);
-            int columnIndex = columnIndex(schema, predicate.columnName());
-            ColumnType columnType = schema.get(columnIndex).type();
+            BoundStatement.Predicate predicate = select.where().get();
 
             for (int partitionNumber = 0; partitionNumber < allPartitions.size(); partitionNumber++) {
                 StorageEngine.PartitionMeta partition = allPartitions.get(partitionNumber);
                 boolean canMatch = StorageEngine.partitionMayContain(
-                        partition.mins.get(columnIndex),
-                        partition.maxs.get(columnIndex),
+                        partition.stats.get(predicate.columnIndex()),
                         predicate.comparison(),
-                        predicate.constant(),
-                        columnType);
+                        predicate.constant());
 
+                ColumnStats stats = partition.stats.get(predicate.columnIndex());
                 LOGGER.debug("table={} column={} comparison={} const={} partition={} min={} max={} decision={}",
-                        tableName, predicate.columnName(), predicate.comparison(), predicate.constant(),
-                        partitionNumber, partition.mins.get(columnIndex), partition.maxs.get(columnIndex),
+                        tableIndex, predicate.columnIndex(), predicate.comparison(), predicate.constant(),
+                        partitionNumber, stats.min(), stats.max(),
                         canMatch ? "READ" : "PRUNED");
 
                 if (canMatch)
@@ -61,21 +57,20 @@ public final class Planner {
             }
         }
 
-        Operator root = new ScanOperator(engine, catalog, tableName, survivingPartitions);
+        Operator root = new ScanOperator(engine, catalog, tableIndex, survivingPartitions);
 
         if (select.where().isPresent()) {
-            Statement.Predicate predicate = select.where().get();
-            List<ColumnSpec> schema = engine.schema(catalog, tableName);
-            int columnIndex = columnIndex(schema, predicate.columnName());
-            root = new FilterOperator(root, predicate, columnIndex);
+            BoundStatement.Predicate predicate = select.where().get();
+            root = new FilterOperator(root, predicate);
 
             LOGGER.debug("added filter operation where={}", predicate);
         }
 
-        if (!select.columns().isEmpty()) {
-            root = new ProjectOperator(root, select.columns());
+        if (select.columnIndices().isPresent()) {
+            root = new ProjectOperator(root, select.columnIndices().get());
 
-            LOGGER.debug("added projection operation columns=[{}]", String.join(" ", select.columns()));
+            String columns = select.columnIndices().stream().map(Object::toString).reduce("", (a, b) -> a + " " + b);
+            LOGGER.debug("added projection operation columns=[{}]", columns);
         }
 
         if (select.limit().isPresent()) {
@@ -89,16 +84,8 @@ public final class Planner {
                 total, survivingPartitions.size(), total - survivingPartitions.size());
 
         LOGGER.debug("created plan table={} totalPartitions={} survivingPartitions={} prunedPartitions={}",
-                tableName, stats.partitionsTotal(), stats.partitionsRead(), stats.partitionsPruned());
+                tableIndex, stats.partitionsTotal(), stats.partitionsRead(), stats.partitionsPruned());
 
         return new Plan(root, stats);
-    }
-
-    private static int columnIndex(List<ColumnSpec> schema, String columnName) {
-        for (int index = 0; index < schema.size(); index++) {
-            if (schema.get(index).name().equals(columnName))
-                return index;
-        }
-        throw new IllegalArgumentException("unknown column: " + columnName);
     }
 }

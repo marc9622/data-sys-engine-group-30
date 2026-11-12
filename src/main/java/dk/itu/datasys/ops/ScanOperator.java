@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.Spec.Value;
 import dk.itu.datasys.StorageEngine;
 import dk.itu.datasys.StorageEngine.Catalog;
 
@@ -17,22 +18,22 @@ public final class ScanOperator implements Operator {
 
     private final StorageEngine engine;
     private final Catalog catalog;
-    private final String tableName;
+    private final int tableIndex;
     private final List<StorageEngine.PartitionMeta> partitions;
     private int nextPartitionIndex;
     private int rowsOut;
-    private Iterator<Object[]> rows;
+    private Iterator<Value[]> rows;
 
-    public ScanOperator(StorageEngine engine, Catalog catalog, String tableName, List<StorageEngine.PartitionMeta> partitions) {
+    public ScanOperator(StorageEngine engine, Catalog catalog, int tableIndex, List<StorageEngine.PartitionMeta> partitions) {
         this.engine = Objects.requireNonNull(engine);
         this.catalog = catalog;
-        this.tableName = Objects.requireNonNull(tableName);
+        this.tableIndex = tableIndex;
         this.partitions = List.copyOf(partitions);
     }
 
     @Override
     public List<ColumnSpec> schema() {
-        return engine.schema(catalog, tableName);
+        return engine.schema(catalog, tableIndex);
     }
 
     @Override
@@ -43,14 +44,14 @@ public final class ScanOperator implements Operator {
     }
 
     @Override
-    public Object[] next() {
+    public Value[] next() {
         while (!rows.hasNext()) {
             if (nextPartitionIndex >= partitions.size())
                 return null;
 
             StorageEngine.PartitionMeta partition = partitions.get(nextPartitionIndex++);
 
-            rows = engine.readPartitionRows(catalog, tableName, partition).iterator();
+            rows = engine.readPartitionRows(catalog, tableIndex, partition).iterator();
         }
 
         return rows.next();
@@ -58,7 +59,7 @@ public final class ScanOperator implements Operator {
 
     @Override
     public void close() {
-        LOGGER.debug("table={} partitions={} rowsOut={}", tableName, partitions.size(), rowsOut);
+        LOGGER.debug("table={} partitions={} rowsOut={}", tableIndex, partitions.size(), rowsOut);
     }
 
 }

@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
-import dk.itu.datasys.Statement.Predicate;
+import dk.itu.datasys.BoundStatement.Predicate;
 import dk.itu.datasys.StorageEngine;
 import dk.itu.datasys.StorageEngine.Catalog;
 
@@ -36,13 +36,13 @@ class OperatorTest {
         StorageEngine engine = createPartitionedEngine(tempDir);
         Catalog catalog = engine.viewCatalogForTesting();
 
-        List<StorageEngine.PartitionMeta> partitions = engine.activePartitions(catalog, tripsName);
+        List<StorageEngine.PartitionMeta> partitions = engine.activePartitions(catalog, 0);
         List<StorageEngine.PartitionMeta> selectedPartitions = partitions.subList(1, 3);
 
         // Choose rows 2,3,4,5 for assertion(rows in partiotion 1 and 2) 
-        List<Object[]> selectedRows = tripsRows.subList(2, 6);
+        List<Value[]> selectedRows = tripsRows.subList(2, 6);
 
-        ScanOperator scanOp = new ScanOperator(engine, catalog, tripsName, selectedPartitions);
+        ScanOperator scanOp = new ScanOperator(engine, catalog, 0, selectedPartitions);
         AssertOperator assertOp = new AssertOperator(scanOp, selectedRows);
 
         assertOp.openExhaustCloseAndGetSchema();
@@ -53,7 +53,7 @@ class OperatorTest {
         StorageEngine engine = createPartitionedEngine(tempDir);
         Catalog catalog = engine.viewCatalogForTesting();
 
-        ScanOperator scanOp = new ScanOperator(engine, catalog, tripsName, List.of());
+        ScanOperator scanOp = new ScanOperator(engine, catalog, 0, List.of());
         AssertOperator assertOp = new AssertOperator(scanOp, List.of());
 
         assertOp.openExhaustCloseAndGetSchema();
@@ -62,7 +62,7 @@ class OperatorTest {
     @Test
     void scanOperatorReturnsTableSchema(@TempDir Path tempDir) {
         StorageEngine engine = createPartitionedEngine(tempDir);
-        ScanOperator scanOp = new ScanOperator(engine, engine.viewCatalogForTesting(), tripsName, List.of());
+        ScanOperator scanOp = new ScanOperator(engine, engine.viewCatalogForTesting(), 0, List.of());
 
         assertEquals(tripsColumns, scanOp.schema());
     }
@@ -90,14 +90,12 @@ class OperatorTest {
         MockOperator mockOp = new MockOperator(tripsColumns, tripsRows);
 
         for (int columnIndex = 0; columnIndex < tripsColumns.size(); columnIndex++) {
-            ColumnSpec column = tripsColumns.get(columnIndex);
-
-            Object constant = tripsRows.get(5)[columnIndex];
-            Predicate predicate = new Predicate(column.name(), Comparison.EQUALS, constant);
-            FilterOperator filterOp = new FilterOperator(mockOp, predicate, columnIndex);
+            Value constant = tripsRows.get(5)[columnIndex];
+            Predicate predicate = new Predicate(columnIndex, Comparison.EQUALS, constant);
+            FilterOperator filterOp = new FilterOperator(mockOp, predicate);
 
             int i = columnIndex;
-            List<Object[]> filteredRows = tripsRows.stream().filter(row -> row[i].equals(constant)).toList();
+            List<Value[]> filteredRows = tripsRows.stream().filter(row -> row[i].equals(constant)).toList();
             AssertOperator assertOp = new AssertOperator(filterOp, filteredRows);
 
             List<ColumnSpec> columns = assertOp.openExhaustCloseAndGetSchema();
@@ -112,7 +110,7 @@ class OperatorTest {
         for (int limitCount : List.of(0, 5, tripsRows.size())) {
             LimitOperator limitOp = new LimitOperator(mockOp, limitCount);
 
-            List<Object[]> limitedRows = tripsRows.stream().limit(limitCount).toList();
+            List<Value[]> limitedRows = tripsRows.stream().limit(limitCount).toList();
             AssertOperator assertOp = new AssertOperator(limitOp, limitedRows);
 
             List<ColumnSpec> columns = assertOp.openExhaustCloseAndGetSchema();
@@ -128,10 +126,10 @@ class OperatorTest {
             ColumnSpec column = tripsColumns.get(columnIndex);
 
             List<ColumnSpec> projection = List.of(column);
-            ProjectOperator projectOp = new ProjectOperator(mockOp, projection.stream().map(ColumnSpec::name).toList());
+            ProjectOperator projectOp = new ProjectOperator(mockOp, List.of(columnIndex));
 
-            int i = columnIndex;
-            List<Object[]> projectedRows = tripsRows.stream().map(row -> new Object[] {row[i]}).toList();
+            final int i = columnIndex;
+            List<Value[]> projectedRows = tripsRows.stream().map(row -> new Value[] {row[i]}).toList();
             AssertOperator assertOp = new AssertOperator(projectOp, projectedRows);
 
             List<ColumnSpec> columns = assertOp.openExhaustCloseAndGetSchema();
@@ -141,7 +139,7 @@ class OperatorTest {
 
     @Test
     void distinctOperator() {
-        List<Object[]> duplicatedRows = new ArrayList<>(tripsRows.size() * 2);
+        List<Value[]> duplicatedRows = new ArrayList<>(tripsRows.size() * 2);
         duplicatedRows.addAll(tripsRows);
         duplicatedRows.addAll(tripsRows);
 
@@ -156,10 +154,10 @@ class OperatorTest {
         for (List<Integer> columns : mappings) {
             DistinctOperator distinctOp = new DistinctOperator(mockOp, new HashSet<>(columns));
 
-            class Wrapper {
-                final Object[] row;
+            class EqualsWrapper {
+                final Value[] row;
 
-                Wrapper(Object[] row) {
+                EqualsWrapper(Value[] row) {
                     this.row = row;
                 }
 
@@ -168,7 +166,7 @@ class OperatorTest {
                     if (this == obj) return true;
                     if (obj == null || getClass() != obj.getClass()) return false;
 
-                    Wrapper other = (Wrapper) obj;
+                    EqualsWrapper other = (EqualsWrapper) obj;
                     for (int columnIndex : columns) {
                         if (!Objects.equals(this.row[columnIndex], other.row[columnIndex]))
                             return false;
@@ -182,8 +180,8 @@ class OperatorTest {
                 }
             }
 
-            List<Object[]> distinctedRows = tripsRows.stream()
-                .map(Wrapper::new)
+            List<Value[]> distinctedRows = tripsRows.stream()
+                .map(EqualsWrapper::new)
                 .distinct()
                 .map(w -> w.row)
                 .toList();
@@ -204,9 +202,9 @@ class OperatorTest {
                 SortOperator sortOp = new SortOperator(mockOp, columnIndex, ordering);
 
                 int i = columnIndex;
-                List<Object[]> sortedRows = tripsRows.stream()
+                List<Value[]> sortedRows = tripsRows.stream()
                     .sorted((left, right) ->
-                        ordering.compareNonNull(left[i], right[i], tripsColumns.get(i).type())
+                        ordering.compareNonNull(left[i], right[i])
                     )
                     .toList();
 
@@ -227,7 +225,7 @@ class OperatorTest {
 
             CountOperator countOp = new CountOperator(limitOp);
 
-            List<Object[]> countRows = List.<Object[]>of(new Object[] {(long) count});
+            List<Value[]> countRows = List.<Value[]>of(Value.arrayOf(count));
             AssertOperator assertOp = new AssertOperator(countOp, countRows);
 
             List<ColumnSpec> countSchema = List.of(new ColumnSpec(CountOperator.COLUMN_NAME, ColumnType.LONG));

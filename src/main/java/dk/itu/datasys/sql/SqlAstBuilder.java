@@ -12,7 +12,7 @@ import dk.itu.datasys.Statement;
 public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
     // Builds an AST statement list from the complete SQL script.
     @Override
-    public Object visitScript(SqlParser.ScriptContext context) {
+    public List<Statement> visitScript(SqlParser.ScriptContext context) {
         return context.statement().stream()
                 .map(statement -> (Statement) visit(statement))
                 .toList();
@@ -20,7 +20,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Builds a CREATE TABLE node and its column definitions.
     @Override
-    public Object visitCreateTable(SqlParser.CreateTableContext context) {
+    public Statement.CreateTable visitCreateTable(SqlParser.CreateTableContext context) {
         List<ColumnSpec> columns = context.columnDef().stream()
                 .map(column -> (ColumnSpec) visit(column))
                 .toList();
@@ -33,7 +33,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Converts one column definition into a ColumnSpec.
     @Override
-    public Object visitColumnDef(SqlParser.ColumnDefContext context) {
+    public ColumnSpec visitColumnDef(SqlParser.ColumnDefContext context) {
         return new ColumnSpec(
                 context.IDENTIFIER().getText(),
                 (ColumnType) visit(context.columnType()));
@@ -41,7 +41,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Maps the SQL column type token to the storage type enum.
     @Override
-    public Object visitColumnType(SqlParser.ColumnTypeContext context) {
+    public ColumnType visitColumnType(SqlParser.ColumnTypeContext context) {
         if (context.STRING() != null) {
             return ColumnType.STRING;
         }
@@ -53,7 +53,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Builds a COPY node and removes quotes from the file path.
     @Override
-    public Object visitCopy(SqlParser.CopyContext context) {
+    public Statement.Copy visitCopy(SqlParser.CopyContext context) {
         return Statement.copy(
                 context.IDENTIFIER().getText(),
                 unquote(context.STRING_LITERAL().getText()));
@@ -61,7 +61,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Builds a SELECT node with an optional WHERE predicate.
     @Override
-    public Object visitSelect(SqlParser.SelectContext context) {
+    public Statement.Select visitSelect(SqlParser.SelectContext context) {
         @SuppressWarnings("unchecked") 
         List<String> columnList = context.columnList() == null
                 ? List.of()
@@ -84,7 +84,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitDelete(SqlParser.DeleteContext context) {
+    public Statement.Delete visitDelete(SqlParser.DeleteContext context) {
         Optional<Statement.Predicate> predicate = Optional
             .ofNullable(context.predicate())
             .map(p -> (Statement.Predicate) visit(p));
@@ -97,7 +97,7 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Builds the projection column list.
     @Override
-    public Object visitColumnList(SqlParser.ColumnListContext context) {
+    public List<String> visitColumnList(SqlParser.ColumnListContext context) {
         return context.IDENTIFIER().stream()
             .<String>map(column -> column.getText())
             .toList();
@@ -105,29 +105,29 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Builds a predicate from its column, operator, and literal.
     @Override
-    public Object visitPredicate(SqlParser.PredicateContext context) {
+    public Statement.Predicate visitPredicate(SqlParser.PredicateContext context) {
         return new Statement.Predicate(
                 context.IDENTIFIER().getText(),
                 comparison(context.comparison.getText()),
-                visit(context.literal()));
+                (Value) visit(context.literal()));
     }
 
     // Converts a SQL literal to String, Long, or Double.
     @Override
-    public Object visitLiteral(SqlParser.LiteralContext context) {
+    public Value visitLiteral(SqlParser.LiteralContext context) {
         TerminalNode literal;
         if ((literal = context.STRING_LITERAL()) != null) {
-            return unquote(literal.getText());
+            return new Value.String(unquote(literal.getText()));
         }
         try {
             if ((literal = context.LONG_LITERAL()) != null) {
-                return Long.valueOf(literal.getText());
+                return new Value.Long(Long.valueOf(literal.getText()));
             }
             if ((literal = context.DOUBLE_LITERAL()) != null) {
                 double value = Double.valueOf(literal.getText());
                 if (!Double.isFinite(value))
                     throw new SqlParseException("Double literal `" + literal.getText() + "` out of range: ", literal.getSymbol());
-                return value;
+                return new Value.Double(value);
             }
         } catch (NumberFormatException e) {
             throw new SqlParseException(e, literal.getSymbol());

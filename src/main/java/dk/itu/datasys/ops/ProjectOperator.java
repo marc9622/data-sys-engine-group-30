@@ -1,43 +1,22 @@
 package dk.itu.datasys.ops;
 
 import java.util.List;
-import java.util.stream.IntStream;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.ColumnSpec;
+import dk.itu.datasys.Spec.Value;
 
 public final class ProjectOperator extends Operator.RowWiseIntermediate {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ProjectOperator.class);
-
-    private final List<String> columns;
-
-    private int[] mapping;
+    private final List<Integer> columns;
     private List<ColumnSpec> schema;
 
-    public ProjectOperator(Operator child, List<String> columns) {
+    public ProjectOperator(Operator child, List<Integer> columns) {
         super(child);
         this.columns = columns;
-
-        this.mapping = null;
-        this.schema = null;
     }
 
     @Override
     protected void openIntermediate(List<ColumnSpec> srcColumns) {
-        List<String> srcColumnNames = srcColumns.stream().map(ColumnSpec::name).toList();
-
-        mapping = columns.stream().mapToInt(column -> {
-            for (int sourceColumnIndex = 0; sourceColumnIndex < srcColumnNames.size(); sourceColumnIndex++) {
-                if (srcColumnNames.get(sourceColumnIndex).equals(column))
-                    return sourceColumnIndex;
-            }
-            LOGGER.error("invalid column name column={} sourceColumns=[{}]", column, String.join(" ", srcColumnNames));
-            throw new IllegalArgumentException("Column " + column + " not found in source schema");
-        }).toArray();
-
-        schema = IntStream.of(mapping).mapToObj(srcColumns::get).toList();
+        schema = columns.stream().map(srcColumns::get).toList();
     }
 
     @Override
@@ -46,10 +25,10 @@ public final class ProjectOperator extends Operator.RowWiseIntermediate {
     }
 
     @Override
-    protected NextResult nextIntermediate(Object[] row) {
-        Object[] result = new Object[mapping.length];
-        for (int i = 0; i < mapping.length; i++) {
-            result[i] = row[mapping[i]];
+    protected NextResult nextIntermediate(Value[] row) {
+        Value[] result = new Value[columns.size()];
+        for (int i = 0; i < columns.size(); i++) {
+            result[i] = row[columns.get(i)];
         }
         return NextResult.of(result);
     }

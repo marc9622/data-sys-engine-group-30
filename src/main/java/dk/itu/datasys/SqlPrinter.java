@@ -1,6 +1,7 @@
 package dk.itu.datasys;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Objects;
 
 import dk.itu.datasys.Spec.*;
@@ -42,15 +43,18 @@ public final class SqlPrinter {
         StringBuilder sb = new StringBuilder();
         sb.append("SELECT ");
 
-        if (select.columns().isEmpty()) {
+        if (select.columnNames().isEmpty()) {
             sb.append("*");
         }
-        else for (int i = 0; i < select.columns().size(); i++) {
-            String col = select.columns().get(i);
-            if (i > 0) {
-                sb.append(", ");
+        else {
+            List<String> columnNames = select.columnNames().get();
+            for (int i = 0; i < columnNames.size(); i++) {
+                String col = columnNames.get(i);
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(col);
             }
-            sb.append(col);
         }
 
         sb.append(" FROM ").append(select.tableName());
@@ -108,18 +112,15 @@ public final class SqlPrinter {
         };
     }
 
-    private static String literalSql(Object value) {
-        if (value instanceof String s) {
-            return "'" + escapeSqlString(s) + "'";
-        }
-        if (value instanceof Long l) {
-            return l.toString();
-        }
-        if (value instanceof Double d) {
-            String s = new BigDecimal(d).toPlainString();
-            return s.contains(".") ? s : s + ".0";
-        }
-        throw new IllegalArgumentException("unsupported literal type: " + value);
+    private static String literalSql(Value value) {
+        return switch (value) {
+            case Value.String(String s) -> "'" + escapeSqlString(s) + "'";
+            case Value.Long(long l) -> Long.toString(l);
+            case Value.Double(double d) -> {
+                String s = new BigDecimal(d).toPlainString();
+                yield s.contains(".") ? s : s + ".0";
+            }
+        };
     }
 
     private static String escapeSqlString(String value) {
