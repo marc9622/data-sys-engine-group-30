@@ -48,6 +48,9 @@ public final class StorageEngine {
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private final int maxRowsPerPartition;
 
+   
+    Runnable beforeCommit = () -> {};
+
     // ---------- Public API ----------
 
     /**

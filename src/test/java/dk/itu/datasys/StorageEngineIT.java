@@ -6,6 +6,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -452,5 +458,40 @@ class StorageEngineIT {
 
     String tripsPartitionName(int index) {
         return StorageEngine.partitionFileName("trips", index);
+    }
+
+    @Test
+    void twoWritersRejectsDelete(@TempDir Path tmp) throws Exception {
+        System.setProperty("maxRowsPerPartition", "2");
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        e.beforeCommit = () -> {
+            parked.countDown();
+            try {
+
+                winnerDone.await(); 
+            } catch (InterruptedException ex1) {
+                throw new RuntimeException(ex1);
+            }
+        };
+
+        Future<?> loser = executor.submit(
+                () -> ex.executeScript("DELETE FROM trips WHERE distance > 100;"));
+        assertTrue(parked.await(5, TimeUnit.MINUTES), "The DELETE should have parked before commit");
+        e.beforeCommit = () -> {}; 
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+        winnerDone.countDown();
+
+        ExecutionException failure = assertThrows(ExecutionException.class, loser::get);
+        assertEquals("ConflictException", failure.getCause().getClass().getSimpleName());
+        executor.shutdownNow();
+
     }
 }
