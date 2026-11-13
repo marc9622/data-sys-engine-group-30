@@ -74,11 +74,11 @@ This creates a tag that the teaching assistant will check out to validate your p
 
 ## Definition of done
 
-- [ ] A conflicting commit aborts with `ConflictException`, leaves no visible change, and leaves an `ERROR` line in the log.
-- [ ] The commit section is serialized; snapshot reads under a concurrent commit return the snapshot's rows.
-- [ ] The two-writer test runs deterministically on latches and a hook, no sleeps, a timeout on every await, green in CI.
-- [ ] All required tests green in CI; PRs reviewed.
-- [ ] Tag `v0.8` is pushed.
+- [x] A conflicting commit aborts with `ConflictException`, leaves no visible change, and leaves an `ERROR` line in the log.
+- [x] The commit section is serialized; snapshot reads under a concurrent commit return the snapshot's rows.
+- [x] The two-writer test runs deterministically on latches and a hook, no sleeps, a timeout on every await, green in CI.
+- [x] All required tests green in CI; PRs reviewed.
+- [] Tag `v0.8` is pushed.
 
 ## Outlook
 

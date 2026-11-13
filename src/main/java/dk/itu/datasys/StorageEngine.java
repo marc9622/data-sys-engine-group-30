@@ -653,7 +653,7 @@ public final class StorageEngine {
     }
 
     private void commitCatalog(Catalog catalog) {
-        LOGGER.debug("commit catalog tables={}", catalog.tables.size());
+        LOGGER.debug("committing catalog with tableCount={}", catalog.tables.size());
 
         File tempCatalogFile = catalogPath.resolveSibling(tempCatalogFileName()).toFile();
 
@@ -747,6 +747,8 @@ public final class StorageEngine {
         }
 
         renameReplaceTempCatalogUnlocked(tempCatalogFilePath);
+
+        LOGGER.debug("committed catalog with tableCount={}", localCatalog.tables.size());
     }
 
     public static final class ConflictException extends RuntimeException {
@@ -756,6 +758,7 @@ public final class StorageEngine {
     }
 
     private void renameReplaceTempCatalogUnlocked(Path tempCatalogFilePath) {
+        LOGGER.debug("using catalog path={} tempCatalogPath={}", catalogPath, tempCatalogFilePath);
         try {
             Files.move(tempCatalogFilePath, catalogPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
