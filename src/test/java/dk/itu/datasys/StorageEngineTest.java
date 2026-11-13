@@ -46,10 +46,10 @@ class StorageEngineUnitTest {
 
         createTableWithCatalog(eng, "t", cols);
         StorageEngine.TableMeta tm = eng.viewCatalogForTesting().tables.get("t");
+        assertNotNull(tm);
 
         // write partition
         eng.writePartition("t", tm, List.of(row1, row2, row3), 0);
-        assertNotNull(tm);
         assertEquals(1, tm.partitions.size());
 
         // check min/max

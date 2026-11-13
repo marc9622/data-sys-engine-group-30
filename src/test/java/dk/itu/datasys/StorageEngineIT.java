@@ -6,6 +6,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -15,6 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.Catalog;
 import dk.itu.datasys.TestingUtils.Streams;
+import dk.itu.datasys.ops.Operator;
 
 class StorageEngineIT {
 
@@ -229,31 +236,23 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
         Executor ex = new Executor(e);
 
-        assertFalse(e.isCatalogOpenForTesting());
-
         ex.executeScript("CREATE TABLE t (city STRING, distance LONG, price DOUBLE);");
 
-        assertFalse(e.isCatalogOpenForTesting());
-
         {
             Catalog catalog = e.openCatalog();
-            assertTrue(e.isCatalogOpenForTesting());
+            assertFalse(catalog.isModified());
             e.copyFromCsvFile(catalog, "t", resource("trips.csv"));
-            assertTrue(e.isCatalogOpenForTesting());
+            assertTrue(catalog.isModified());
             e.closeCatalog(catalog);
         }
-
-        assertFalse(e.isCatalogOpenForTesting());
 
         {
             Catalog catalog = e.openCatalog();
-            assertTrue(e.isCatalogOpenForTesting());
+            assertFalse(catalog.isModified());
             ex.executeSelect(catalog, Statement.select("t").statement());
-            assertTrue(e.isCatalogOpenForTesting());
+            assertFalse(catalog.isModified());
             e.closeCatalog(catalog);
         }
-
-        assertFalse(e.isCatalogOpenForTesting());
     }
 
     @Test
@@ -425,6 +424,33 @@ class StorageEngineIT {
         assertEquals(0, ex.executeScript("SELECT * FROM trips;").getFirst().size());
     }
 
+    @Test
+    void concurrentReadDeleteConsistency(@TempDir Path tmp) throws Exception {
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        List<Object[]> expectedRows = ex.executeScript("SELECT * FROM trips;").getFirst();
+
+        Catalog catalog = e.openCatalog();
+
+        Planner planner = new Planner(e);
+        Plan plan = planner.plan(e.viewCatalogForTesting(), Statement.select("trips").statement());
+        Operator root = plan.root();
+
+        ex.executeScript("DELETE FROM trips WHERE distance > 100;");
+
+        root.open();
+        List<Object[]> actualRows = root.exhaust();
+        root.close();
+
+        e.closeCatalog(catalog);
+
+        assertEquals(expectedRows.size(), actualRows.size());
+    }
+
     void assertTableVersion(int expected, StorageEngine engine, String tableName) {
         int actual = engine.viewCatalogForTesting().tables.get(tableName).version;
         assertEquals(expected, actual, "Expected table version " + expected + ", but got " + actual);
@@ -433,4 +459,118 @@ class StorageEngineIT {
     String tripsPartitionName(int index) {
         return StorageEngine.partitionFileName("trips", index);
     }
+
+    @Test
+    void twoWritersRejectsDelete(@TempDir Path tmp) throws Exception {
+        System.setProperty("maxRowsPerPartition", "2");
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        e.beforeCommit = () -> {
+            parked.countDown();
+            try {
+
+                winnerDone.await(); 
+            } catch (InterruptedException ex1) {
+                throw new RuntimeException(ex1);
+            }
+        };
+
+        Future<?> loser = executor.submit(
+                () -> ex.executeScript("DELETE FROM trips WHERE distance > 100;"));
+        assertTrue(parked.await(5, TimeUnit.MINUTES), "The DELETE should have parked before commit");
+        e.beforeCommit = () -> {}; 
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+        winnerDone.countDown();
+
+        ExecutionException failure = assertThrows(ExecutionException.class, loser::get);
+        assertEquals("ConflictException", failure.getCause().getClass().getSimpleName());
+        executor.shutdownNow();
+    }
+
+     @Test
+    void twoWritersRejectsCopy(@TempDir Path tmp) throws Exception {
+        System.setProperty("maxRowsPerPartition", "2");
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        e.beforeCommit = () -> {
+            parked.countDown();
+            try {
+
+                winnerDone.await(); 
+            } catch (InterruptedException ex1) {
+                throw new RuntimeException(ex1);
+            }
+        };
+
+        Future<?> loser = executor.submit(
+                () -> ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';"));
+        assertTrue(parked.await(5, TimeUnit.MINUTES), "The COPY should have parked before commit");
+        e.beforeCommit = () -> {}; 
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+        winnerDone.countDown();
+
+        ExecutionException failure = assertThrows(ExecutionException.class, loser::get);
+        assertEquals("ConflictException", failure.getCause().getClass().getSimpleName());
+        executor.shutdownNow();
+    }
+
+     @Test
+    void AbortEqualsWinnersResult(@TempDir Path tmp) throws Exception {
+        System.setProperty("maxRowsPerPartition", "2");
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        List<Object[]> InitialRows = ex.executeScript("SELECT * FROM trips;").getFirst();
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        e.beforeCommit = () -> {
+            parked.countDown();
+            try {
+
+                winnerDone.await(); 
+            } catch (InterruptedException ex1) {
+                throw new RuntimeException(ex1);
+            }
+        };
+
+        Future<?> loser = executor.submit(
+                () -> ex.executeScript("DELETE FROM trips WHERE distance > 100;"));
+        assertTrue(parked.await(5, TimeUnit.MINUTES), "The DELETE should have parked before commit");
+        e.beforeCommit = () -> {}; 
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+        winnerDone.countDown();
+    
+        ExecutionException failure = assertThrows(ExecutionException.class, loser::get);
+        assertEquals("ConflictException", failure.getCause().getClass().getSimpleName());
+        
+        int expectedRowsSizeAfterCopy = InitialRows.size() * 2;
+        List<Object[]> actualRows = ex.executeScript("SELECT * FROM trips;").getFirst();
+        assertEquals(expectedRowsSizeAfterCopy, actualRows.size());
+
+        executor.shutdownNow();
+        
+        //Rerun the DELETE to check if it aborts and returns the same result as the winner
+        ex.executeScript("DELETE FROM trips WHERE distance > 100;");
+        List <Object[]> actualRowsAfterDelete = ex.executeScript("SELECT * FROM trips;").getFirst();
+        assertTrue(actualRowsAfterDelete.size() < actualRows.size(), "Rerunning delete should be successfull and reduce current rowcount"); 
+    }
+
 }
