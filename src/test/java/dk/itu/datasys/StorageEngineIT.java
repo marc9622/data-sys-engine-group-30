@@ -492,6 +492,85 @@ class StorageEngineIT {
         ExecutionException failure = assertThrows(ExecutionException.class, loser::get);
         assertEquals("ConflictException", failure.getCause().getClass().getSimpleName());
         executor.shutdownNow();
-
     }
+
+     @Test
+    void twoWritersRejectsCopy(@TempDir Path tmp) throws Exception {
+        System.setProperty("maxRowsPerPartition", "2");
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        e.beforeCommit = () -> {
+            parked.countDown();
+            try {
+
+                winnerDone.await(); 
+            } catch (InterruptedException ex1) {
+                throw new RuntimeException(ex1);
+            }
+        };
+
+        Future<?> loser = executor.submit(
+                () -> ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';"));
+        assertTrue(parked.await(5, TimeUnit.MINUTES), "The COPY should have parked before commit");
+        e.beforeCommit = () -> {}; 
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+        winnerDone.countDown();
+
+        ExecutionException failure = assertThrows(ExecutionException.class, loser::get);
+        assertEquals("ConflictException", failure.getCause().getClass().getSimpleName());
+        executor.shutdownNow();
+    }
+
+     @Test
+    void AbortEqualsWinnersResult(@TempDir Path tmp) throws Exception {
+        System.setProperty("maxRowsPerPartition", "2");
+        StorageEngine e = new StorageEngine(tmp);
+        Executor ex = new Executor(e);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        ex.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+
+        List<Object[]> InitialRows = ex.executeScript("SELECT * FROM trips;").getFirst();
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch winnerDone = new CountDownLatch(1);
+        e.beforeCommit = () -> {
+            parked.countDown();
+            try {
+
+                winnerDone.await(); 
+            } catch (InterruptedException ex1) {
+                throw new RuntimeException(ex1);
+            }
+        };
+
+        Future<?> loser = executor.submit(
+                () -> ex.executeScript("DELETE FROM trips WHERE distance > 100;"));
+        assertTrue(parked.await(5, TimeUnit.MINUTES), "The DELETE should have parked before commit");
+        e.beforeCommit = () -> {}; 
+        ex.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
+        winnerDone.countDown();
+    
+        ExecutionException failure = assertThrows(ExecutionException.class, loser::get);
+        assertEquals("ConflictException", failure.getCause().getClass().getSimpleName());
+        
+        int expectedRowsSizeAfterCopy = InitialRows.size() * 2;
+        List<Object[]> actualRows = ex.executeScript("SELECT * FROM trips;").getFirst();
+        assertEquals(expectedRowsSizeAfterCopy, actualRows.size());
+
+        executor.shutdownNow();
+        
+        //Rerun the DELETE to check if it aborts and returns the same result as the winner
+        ex.executeScript("DELETE FROM trips WHERE distance > 100;");
+        List <Object[]> actualRowsAfterDelete = ex.executeScript("SELECT * FROM trips;").getFirst();
+        assertTrue(actualRowsAfterDelete.size() < actualRows.size(), "Rerunning delete should be successfull and reduce current rowcount"); 
+    }
+
 }
