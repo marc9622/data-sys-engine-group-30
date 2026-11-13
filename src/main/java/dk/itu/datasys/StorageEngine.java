@@ -663,6 +663,7 @@ public final class StorageEngine {
             throw new RuntimeException("failed to write catalog", e);
         }
 
+        beforeCommit.run(); 
         try {
             synchronized (catalogCommitLock) {
                 if (!IS_WINDOWS) {
