@@ -15,13 +15,14 @@ import dk.itu.datasys.Spec.ColumnSpec;
 public final class HashJoinOperator implements Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(HashJoinOperator.class);
 
-    private final Operator build;
-    private final Operator probe;
-    private final int buildKey; 
-    private final int probeKey;
+    private final Operator buildChild;
+    private final Operator probeChild;
+    private final int buildColumn; 
+    private final int probeColumn;
     private final List<ColumnSpec> schema = new ArrayList<>();
 
-    private final Map<Object, List<Object[]>> buildRowsByKey = new HashMap<>();
+    private final Map<Object, List<Object[]>> hashMap = new HashMap<>();
+
     private Object[] currentProbeRow;
     private List<Object[]> currentMatches = List.of();
     private int nextMatchIndex;
@@ -30,23 +31,27 @@ public final class HashJoinOperator implements Operator {
     private int rowsProbe;
     private int rowsOut;
 
-    public HashJoinOperator(Operator build, Operator probe, int buildKey, int probeKey) {
-        this.build = Objects.requireNonNull(build, "build");
-        this.probe = Objects.requireNonNull(probe, "probe");
-        if (buildKey < 0 || probeKey < 0)
+    public HashJoinOperator(Operator buildChild, Operator probeChild, int buildColumn, int probeColumn) {
+        this.buildChild = Objects.requireNonNull(buildChild, "build");
+        this.probeChild = Objects.requireNonNull(probeChild, "probe");
+        if (buildColumn < 0 || probeColumn < 0)
             throw new IllegalArgumentException("join key indexes must be non-negative");
-        this.buildKey = buildKey;
-        this.probeKey = probeKey;
+        this.buildColumn = buildColumn;
+        this.probeColumn = probeColumn;
 
-        schema.addAll(build.schema());
-        schema.addAll(probe.schema());
+        schema.addAll(buildChild.schema());
+        schema.addAll(probeChild.schema());
     }
 
     @Override
     public void open() {
-        validateJoinKeys();
-        buildRowsByKey.clear();
-        currentProbeRow = null;
+        if (buildColumn >= buildChild.schema().size() || probeColumn >= probeChild.schema().size())
+            throw new IllegalArgumentException("join key index is outside the child schema");
+        if (buildChild.schema().get(buildColumn).type() != probeChild.schema().get(probeColumn).type())
+            throw new IllegalArgumentException("join key columns must have the same type");
+
+        hashMap.clear();
+
         currentMatches = List.of();
         nextMatchIndex = 0;
 
@@ -54,13 +59,13 @@ public final class HashJoinOperator implements Operator {
         rowsProbe = 0;
         rowsOut = 0;
 
-        build.open();
-        for (Object[] row; (row = build.next()) != null;) {
+        buildChild.open();
+        for (Object[] row; (row = buildChild.next()) != null;) {
             rowsBuild++;
-            buildRowsByKey.computeIfAbsent(row[buildKey], ignored -> new ArrayList<>()).add(row);   
+            hashMap.computeIfAbsent(row[buildColumn], ignored -> new ArrayList<>()).add(row);   
         }
 
-        probe.open();
+        probeChild.open();
     }
 
     @Override
@@ -70,41 +75,34 @@ public final class HashJoinOperator implements Operator {
 
     @Override
     public Object[] next() {
-        while (true) {
-            if (nextMatchIndex < currentMatches.size()) {  
-                Object[] buildRow = currentMatches.get(nextMatchIndex++); 
-                Object[] joinedRow = new Object[buildRow.length + currentProbeRow.length]; 
-                System.arraycopy(buildRow, 0, joinedRow, 0, buildRow.length); 
-                System.arraycopy(currentProbeRow, 0, joinedRow, buildRow.length, currentProbeRow.length);
-                rowsOut++;
-                return joinedRow;
-            }
+        // Check if we have any remaining matches for the current probe row
+        if (nextMatchIndex == currentMatches.size()) {
+            // Loop until we get the next probe row that has matches in the build table
+            do {
+                currentProbeRow = probeChild.next();
+                if (currentProbeRow == null) 
+                    return null;
 
-            currentProbeRow = probe.next();
-            if (currentProbeRow == null) 
-                return null;
+                rowsProbe++;
+                currentMatches = hashMap.get(currentProbeRow[probeColumn]);
+            } while (currentMatches == null);
 
-            rowsProbe++;
-            currentMatches = buildRowsByKey.get(currentProbeRow[probeKey]);
             nextMatchIndex = 0;
-            if (currentMatches == null)
-                currentMatches = List.of();
         }
+
+        // Build the result from the next match
+        Object[] buildRow = currentMatches.get(nextMatchIndex++); 
+        Object[] joinedRow = new Object[schema.size()]; 
+        System.arraycopy(buildRow, 0, joinedRow, 0, buildRow.length); 
+        System.arraycopy(currentProbeRow, 0, joinedRow, buildRow.length, currentProbeRow.length);
+        rowsOut++;
+        return joinedRow;
     }
 
     @Override
     public void close() {
-        build.close();
-        probe.close();
+        buildChild.close();
+        probeChild.close();
         LOGGER.debug("rowsBuild={} rowsProbe={} rowsOut={}", rowsBuild, rowsProbe, rowsOut);
-    }
-
-    private void validateJoinKeys() {
-        List<ColumnSpec> buildSchema = build.schema();
-        List<ColumnSpec> probeSchema = probe.schema();
-        if (buildKey >= buildSchema.size() || probeKey >= probeSchema.size())
-            throw new IllegalArgumentException("join key index is outside the child schema");
-        if (buildSchema.get(buildKey).type() != probeSchema.get(probeKey).type())
-            throw new IllegalArgumentException("join key columns must have the same type");
     }
 }
