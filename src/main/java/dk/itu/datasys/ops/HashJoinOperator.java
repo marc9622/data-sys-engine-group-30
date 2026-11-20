@@ -19,12 +19,13 @@ public final class HashJoinOperator implements Operator {
     private final Operator probe;
     private final int buildKey; 
     private final int probeKey;
-    private final List<ColumnSpec> schema;
+    private final List<ColumnSpec> schema = new ArrayList<>();
 
     private final Map<Object, List<Object[]>> buildRowsByKey = new HashMap<>();
     private Object[] currentProbeRow;
     private List<Object[]> currentMatches = List.of();
     private int nextMatchIndex;
+    
     private int rowsBuild;
     private int rowsProbe;
     private int rowsOut;
@@ -37,9 +38,8 @@ public final class HashJoinOperator implements Operator {
         this.buildKey = buildKey;
         this.probeKey = probeKey;
 
-        List<ColumnSpec> outputSchema = new ArrayList<>(build.schema()); 
-        outputSchema.addAll(probe.schema()); 
-        this.schema = List.copyOf(outputSchema);
+        schema.addAll(build.schema());
+        schema.addAll(probe.schema());
     }
 
     @Override
@@ -49,6 +49,7 @@ public final class HashJoinOperator implements Operator {
         currentProbeRow = null;
         currentMatches = List.of();
         nextMatchIndex = 0;
+
         rowsBuild = 0;
         rowsProbe = 0;
         rowsOut = 0;
@@ -71,7 +72,6 @@ public final class HashJoinOperator implements Operator {
     public Object[] next() {
         while (true) {
             if (nextMatchIndex < currentMatches.size()) {  
-
                 Object[] buildRow = currentMatches.get(nextMatchIndex++); 
                 Object[] joinedRow = new Object[buildRow.length + currentProbeRow.length]; 
                 System.arraycopy(buildRow, 0, joinedRow, 0, buildRow.length); 
@@ -81,7 +81,7 @@ public final class HashJoinOperator implements Operator {
             }
 
             currentProbeRow = probe.next();
-            if (currentProbeRow == null)
+            if (currentProbeRow == null) 
                 return null;
 
             rowsProbe++;
