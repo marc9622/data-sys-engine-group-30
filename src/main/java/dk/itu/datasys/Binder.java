@@ -145,7 +145,17 @@ public final class Binder {
     }
 
     private void bindJoinOn(List<ColumnSpec> fullSchema, Statement.JoinPredicate join) {
-        // ColumnSpec leftTarget = fullSchema.stream()
+        ColumnSpec leftTarget = fullSchema.stream()
+            .filter(column -> column.name().equals(join.leftColumnName()))
+            .findAny()
+            .orElseThrow(() -> new IllegalArgumentException("unknown column: " + join.leftColumnName()));
+        ColumnSpec rightTarget = fullSchema.stream()
+            .filter(column -> column.name().equals(join.rightColumnName()))
+            .findAny()
+            .orElseThrow(() -> new IllegalArgumentException("unknown column: " + join.rightColumnName()));
+
+        if (!typesMatch(leftTarget.type(), rightTarget.type()))
+            throw new IllegalArgumentException("join columns must have the same type");
     }
 
     private static boolean typesMatch(ColumnType columnType, Object constant) {
