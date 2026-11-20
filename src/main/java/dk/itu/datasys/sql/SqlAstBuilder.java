@@ -1,5 +1,6 @@
 package dk.itu.datasys.sql;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,7 +13,7 @@ import dk.itu.datasys.Statement;
 public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
     // Builds an AST statement list from the complete SQL script.
     @Override
-    public Object visitScript(SqlParser.ScriptContext context) {
+    public List<Statement> visitScript(SqlParser.ScriptContext context) {
         return context.statement().stream()
                 .map(statement -> (Statement) visit(statement))
                 .toList();
@@ -20,10 +21,10 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Builds a CREATE TABLE node and its column definitions.
     @Override
-    public Object visitCreateTable(SqlParser.CreateTableContext context) {
+    public Statement.CreateTable visitCreateTable(SqlParser.CreateTableContext context) {
         List<ColumnSpec> columns = context.columnDef().stream()
-                .map(column -> (ColumnSpec) visit(column))
-                .toList();
+            .map(column -> visitColumnDef(column))
+            .toList();
 
         return Statement
             .createTable(context.IDENTIFIER().getText())
@@ -33,15 +34,15 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Converts one column definition into a ColumnSpec.
     @Override
-    public Object visitColumnDef(SqlParser.ColumnDefContext context) {
+    public ColumnSpec visitColumnDef(SqlParser.ColumnDefContext context) {
         return new ColumnSpec(
                 context.IDENTIFIER().getText(),
-                (ColumnType) visit(context.columnType()));
+                visitColumnType(context.columnType()));
     }
 
     // Maps the SQL column type token to the storage type enum.
     @Override
-    public Object visitColumnType(SqlParser.ColumnTypeContext context) {
+    public ColumnType visitColumnType(SqlParser.ColumnTypeContext context) {
         if (context.STRING() != null) {
             return ColumnType.STRING;
         }
@@ -53,41 +54,53 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Builds a COPY node and removes quotes from the file path.
     @Override
-    public Object visitCopy(SqlParser.CopyContext context) {
+    public Statement.Copy visitCopy(SqlParser.CopyContext context) {
         return Statement.copy(
                 context.IDENTIFIER().getText(),
                 unquote(context.STRING_LITERAL().getText()));
     }
 
-    // Builds a SELECT node with an optional WHERE predicate.
+    // Builds a SELECT node.
     @Override
-    public Object visitSelect(SqlParser.SelectContext context) {
-        @SuppressWarnings("unchecked") 
+    public Statement.Select visitSelect(SqlParser.SelectContext context) {
         List<String> columnList = context.columnList() == null
                 ? List.of()
-                : (List<String>) visit(context.columnList());
+                : visitColumnList(context.columnList());
 
-        Optional<Statement.Predicate> predicate = Optional
-            .ofNullable(context.predicate())
-            .map(p -> (Statement.Predicate) visit(p));
+        List<String> tableList = context.IDENTIFIER().stream()
+            .map(table -> table.getText())
+            .toList();
+
+        List<Statement.Predicate> predicates = visitCondition(context.condition());
+
+        List<Statement.FilterPredicate> filters = new ArrayList<>();
+        List<Statement.JoinPredicate> joins = new ArrayList<>();
+        for (Statement.Predicate predicate : predicates) {
+            switch (predicate) {
+                case Statement.FilterPredicate filter -> filters.add(filter);
+                case Statement.JoinPredicate join -> joins.add(join);
+            }
+        }
 
         Optional<Integer> limit = Optional
             .ofNullable(context.limit())
             .map(t -> Integer.valueOf(t.getText()));
 
         return Statement
-            .select(context.IDENTIFIER().getText())
+            .select(tableList)
             .columns(columnList)
-            .where(predicate)
+            .where(filters)
+            .joinOn(joins)
             .limit(limit)
             .statement();
     }
 
+    // Builds a DELETE node.
     @Override
-    public Object visitDelete(SqlParser.DeleteContext context) {
-        Optional<Statement.Predicate> predicate = Optional
-            .ofNullable(context.predicate())
-            .map(p -> (Statement.Predicate) visit(p));
+    public Statement.Delete visitDelete(SqlParser.DeleteContext context) {
+        Optional<Statement.FilterPredicate> predicate = Optional
+            .ofNullable(context.filter())
+            .map(p -> visitFilter(p));
 
         return Statement
             .delete(context.IDENTIFIER().getText())
@@ -97,19 +110,39 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
 
     // Builds the projection column list.
     @Override
-    public Object visitColumnList(SqlParser.ColumnListContext context) {
+    public List<String> visitColumnList(SqlParser.ColumnListContext context) {
         return context.IDENTIFIER().stream()
             .<String>map(column -> column.getText())
             .toList();
     }
 
-    // Builds a predicate from its column, operator, and literal.
+    // Builds the list of predicates in the WHERE clause.
     @Override
-    public Object visitPredicate(SqlParser.PredicateContext context) {
-        return new Statement.Predicate(
+    public List<Statement.Predicate> visitCondition(SqlParser.ConditionContext context) {
+        return context.predicate().stream()
+            .map(predicate -> (Statement.Predicate) (
+                predicate.filter() != null
+                ? visitFilter(predicate.filter())
+                : visitJoin(predicate.join())
+            ))
+            .toList();
+    }
+
+    // Builds a filter predicate from its column, operator, and literal.
+    @Override
+    public Statement.FilterPredicate visitFilter(SqlParser.FilterContext context) {
+        return new Statement.FilterPredicate(
                 context.IDENTIFIER().getText(),
                 comparison(context.comparison.getText()),
                 visit(context.literal()));
+    }
+
+    // Builds a join on predicate from its two columns.
+    @Override
+    public Statement.JoinPredicate visitJoin(SqlParser.JoinContext context) {
+        return new Statement.JoinPredicate(
+                context.left.getText(),
+                context.right.getText());
     }
 
     // Converts a SQL literal to String, Long, or Double.

@@ -1,5 +1,6 @@
 package dk.itu.datasys;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -62,20 +63,33 @@ public final class Binder {
     }
 
     private void bindSelect(Catalog catalog, Statement.Select select) {
-        String table = select.tableName();
-        if (!catalog.doesTableExist(table))
-            throw new IllegalArgumentException("table does not exist: " + table);
-
-        List<ColumnSpec> schema = engine.schema(catalog, table);
-        List<String> schemaNames = schema.stream().map(ColumnSpec::name).toList();
-
-        for (String column : select.columns()) {
-            if (schemaNames.stream().noneMatch(column::equals))
-                throw new IllegalArgumentException("unknown column: " + column);
+        for (String table : select.tableNames()) {
+            if (!catalog.doesTableExist(table))
+                throw new IllegalArgumentException("table does not exist: " + table);
         }
 
-        Optional<Statement.Predicate> where = select.where();
-        bindWhere(schema, where);
+        List<String> selectColumns = select.columns();
+        if (selectColumns.isEmpty()) {
+            for (String table : select.tableNames()) {
+                for (ColumnSpec column : engine.schema(catalog, table))
+                    selectColumns.add(column.name());
+            }
+        }
+
+        List<ColumnSpec> fullSchema = new ArrayList<>();
+        for (String selectColumn : selectColumns) {
+            List<ColumnSpec> matches = select.tableNames().stream()
+                .flatMap(table -> engine.schema(catalog, table).stream())
+                .toList();
+
+            if (matches.isEmpty()) throw new IllegalArgumentException("unknown column: " + selectColumn);
+            if (matches.size() > 1) throw new IllegalArgumentException("ambiguous column: " + selectColumn);
+
+            fullSchema.add(matches.getFirst());
+        }
+
+        select.filters().forEach(filter -> bindFilter(fullSchema, filter));
+        select.joins().forEach(join -> bindJoinOn(fullSchema, join));
 
         Optional<Integer> limit = select.limit();
         limit.ifPresent(count -> {
@@ -83,14 +97,17 @@ public final class Binder {
                 throw new IllegalArgumentException("limit must be non-negative");
         });
 
-        String log = "bound select statement table=" + table;
+        String log = "bound select statement table=[" + String.join(" ", select.tableNames()) + "]";
         if (select.columns().isEmpty())
             log += " columns=*";
         else
             log += " columns=[" + String.join(" ", select.columns()) + "]";
 
-        if (where.isPresent())
-            log += " where=" + where.get();
+        if (!select.filters().isEmpty())
+            log += " where=[" + String.join(" ", select.filters().stream().map(Object::toString).toList()) + "]";
+
+        if (!select.joins().isEmpty())
+            log += " joins=[" + String.join(" ", select.joins().stream().map(Object::toString).toList()) + "]";
 
         if (limit.isPresent())
             log += " limit=" + limit.get();
@@ -106,28 +123,29 @@ public final class Binder {
 
         List<ColumnSpec> schema = engine.schema(catalog, table);
 
-        Optional<Statement.Predicate> where = delete.where();
-        bindWhere(schema, where);
+        Optional<Statement.FilterPredicate> filter = delete.filter();
+        if (filter.isPresent()) {
+            bindFilter(schema, filter.get());
 
-        if (where.isPresent())
-            LOGGER.debug("bound delete statement table={} where={}", table, where.get());
-        else
+            LOGGER.debug("bound delete statement table={} where={}", table, filter.get());
+        }
+        else {
             LOGGER.debug("bound delete statement table={} where=none", table);
+        }
     }
 
-    private void bindWhere(List<ColumnSpec> schema, Optional<Statement.Predicate> where) {
-        if (where.isEmpty())
-            return;
-
-        Statement.Predicate predicate = where.get();
-
+    private void bindFilter(List<ColumnSpec> schema, Statement.FilterPredicate filter) {
         ColumnSpec target = schema.stream()
-            .filter(c -> c.name().equals(predicate.columnName()))
+            .filter(c -> c.name().equals(filter.columnName()))
             .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("unknown column: " + predicate.columnName()));
+            .orElseThrow(() -> new IllegalArgumentException("unknown column: " + filter.columnName()));
 
-        if (!typesMatch(target.type(), predicate.constant()))
+        if (!typesMatch(target.type(), filter.constant()))
             throw new IllegalArgumentException("constant type does not match column type");
+    }
+
+    private void bindJoinOn(List<ColumnSpec> fullSchema, Statement.JoinPredicate join) {
+        // ColumnSpec leftTarget = fullSchema.stream()
     }
 
     private static boolean typesMatch(ColumnType columnType, Object constant) {

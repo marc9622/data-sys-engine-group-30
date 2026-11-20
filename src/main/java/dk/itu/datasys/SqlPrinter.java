@@ -46,23 +46,29 @@ public final class SqlPrinter {
             sb.append("*");
         }
         else for (int i = 0; i < select.columns().size(); i++) {
-            String col = select.columns().get(i);
-            if (i > 0) {
-                sb.append(", ");
-            }
-            sb.append(col);
+            if (i > 0) sb.append(", ");
+            sb.append(select.columns().get(i));
         }
 
-        sb.append(" FROM ").append(select.tableName());
+        sb.append(" FROM ");
+        
+        for (int i = 0; i < select.tableNames().size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(select.tableNames().get(i));
+        }
 
-        if (select.where().isPresent()) {
-            Statement.Predicate predicate = select.where().get();
-            sb.append(" WHERE ")
-              .append(predicate.columnName())
+        if (!select.filters().isEmpty() || select.joins().isEmpty())
+            sb.append(" WHERE ");
+
+        int predicateCount = 0;
+        for (int i = 0; i < select.filters().size(); i++, predicateCount++) {
+            if (predicateCount > 0) sb.append(" AND ");
+            Statement.FilterPredicate filter = select.filters().get(i);
+            sb.append(filter.columnName())
               .append(" ")
-              .append(comparisonSql(predicate.comparison()))
+              .append(comparisonSql(filter.comparison()))
               .append(" ")
-              .append(literalSql(predicate.constant()));
+              .append(literalSql(filter.constant()));
         }
 
         if (select.limit().isPresent()) {
@@ -78,8 +84,8 @@ public final class SqlPrinter {
         StringBuilder sb = new StringBuilder();
         sb.append("DELETE FROM ").append(delete.tableName());
 
-        if (delete.where().isPresent()) {
-            Statement.Predicate predicate = delete.where().get();
+        if (delete.filter().isPresent()) {
+            Statement.FilterPredicate predicate = delete.filter().get();
             sb.append(" WHERE ")
               .append(predicate.columnName())
               .append(" ")

@@ -1,8 +1,11 @@
 package dk.itu.datasys;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,17 +30,20 @@ public final class Planner {
     public Plan plan(Catalog catalog, Statement.Select select) {
         Objects.requireNonNull(select, "select");
 
-        String tableName = select.tableName();
-        List<StorageEngine.PartitionMeta> allPartitions = engine.activePartitions(catalog, tableName);
-        List<StorageEngine.PartitionMeta> survivingPartitions = new ArrayList<>();
+        Map<String, List<StorageEngine.PartitionMeta>> allPartitions = new HashMap<>();
+        for (String table : select.tableNames())
+            allPartitions.put(table, engine.activePartitions(catalog, table));
+        allPartitions = Map.copyOf(allPartitions);
 
-        if (select.where().isEmpty()) {
-            survivingPartitions.addAll(allPartitions);
+        Map<String, List<StorageEngine.PartitionMeta>> survivingPartitions = new HashMap<>();
+
+        if (select.filters().isEmpty()) {
+            survivingPartitions = Map.copyOf(allPartitions);
 
             LOGGER.debug("table={} no-where partitions={} decision=READ", tableName, survivingPartitions.size());
         }
         else {
-            Statement.Predicate predicate = select.where().get();
+            Statement.FilterPredicate predicate = select.where().get();
             List<ColumnSpec> schema = engine.schema(catalog, tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
             ColumnType columnType = schema.get(columnIndex).type();
@@ -64,7 +70,7 @@ public final class Planner {
         Operator root = new ScanOperator(engine, catalog, tableName, survivingPartitions);
 
         if (select.where().isPresent()) {
-            Statement.Predicate predicate = select.where().get();
+            Statement.FilterPredicate predicate = select.where().get();
             List<ColumnSpec> schema = engine.schema(catalog, tableName);
             int columnIndex = columnIndex(schema, predicate.columnName());
             root = new FilterOperator(root, predicate, columnIndex);

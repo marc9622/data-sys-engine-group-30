@@ -88,7 +88,7 @@ public final class Executor {
 
                 case Statement.Delete delete ->
                     Utils.logExceptions(LOGGER, "failed to execute delete", () -> {
-                        engine.deleteFromTable(catalog, delete.tableName(), delete.where());
+                        engine.deleteFromTable(catalog, delete.tableName(), delete.filter());
                         return List.of();
                     });
             };

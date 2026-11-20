@@ -203,7 +203,7 @@ public final class StorageEngine {
      * @param tableName the name of the table to delete from
      * @param predicate an optional predicate to filter rows to delete
      */
-    public int deleteFromTable(Catalog catalog, String tableName, Optional<Statement.Predicate> predicate) {
+    public int deleteFromTable(Catalog catalog, String tableName, Optional<Statement.FilterPredicate> predicate) {
         requireNonNull(tableName);
         requireNonNull(predicate);
 

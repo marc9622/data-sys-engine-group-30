@@ -7,18 +7,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dk.itu.datasys.Spec.*;
-import dk.itu.datasys.Statement.Predicate;
+import dk.itu.datasys.Statement.FilterPredicate;
 
 public final class FilterOperator extends Operator.RowWiseIntermediate {
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterOperator.class);
 
-    private final Predicate predicate;
+    private final FilterPredicate predicate;
     private final int columnIndex;
     private ColumnType columnType;
     private int rowsIn;
     private int rowsOut;
 
-    public FilterOperator(Operator child, Predicate predicate, int columnIndex) {
+    public FilterOperator(Operator child, FilterPredicate predicate, int columnIndex) {
         super(child);
         this.predicate = Objects.requireNonNull(predicate);
 

@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import dk.itu.datasys.Spec.*;
-import dk.itu.datasys.Statement.Predicate;
+import dk.itu.datasys.Statement.FilterPredicate;
 import dk.itu.datasys.StorageEngine;
 import dk.itu.datasys.StorageEngine.Catalog;
 
@@ -93,7 +93,7 @@ class OperatorTest {
             ColumnSpec column = tripsColumns.get(columnIndex);
 
             Object constant = tripsRows.get(5)[columnIndex];
-            Predicate predicate = new Predicate(column.name(), Comparison.EQUALS, constant);
+            FilterPredicate predicate = new FilterPredicate(column.name(), Comparison.EQUALS, constant);
             FilterOperator filterOp = new FilterOperator(mockOp, predicate, columnIndex);
 
             int i = columnIndex;
