@@ -324,20 +324,6 @@ public final class StorageEngine {
     }
 
     /**
-     * Returns the schema (list of columns) for the given table.
-     * @param tableName the name of the table
-     */
-    public List<ColumnSpec> schema(Catalog catalog, String tableName) {
-        requireNonNull(tableName);
-
-        TableMeta table = catalog.tables.get(tableName);
-        if (table == null)
-            throw new IllegalArgumentException("unknown table: " + tableName);
-
-        return List.copyOf(table.columns);
-    }
-
-    /**
      * Returns the table's partition metadata without reading partition data.
      * @param tableName the name of the table
      */
@@ -773,8 +759,33 @@ public final class StorageEngine {
 
         public Catalog() {} // Needed for deserialization
 
+        public List<ColumnSpec> schema(String tableName) {
+            TableMeta table = tables.get(tableName);
+            if (table == null)
+                throw new IllegalArgumentException("unknown table: " + tableName);
+
+            return List.copyOf(table.columns);
+        }
+
+        public List<TableMeta> tablesFromNames(List<String> tableNames) {
+            List<TableMeta> result = new ArrayList<>(tableNames.size());
+            for (String tableName : tableNames) {
+                TableMeta table = tables.get(tableName);
+                if (table == null)
+                    throw new IllegalArgumentException("unknown table: " + tableName);
+
+                result.add(table);
+            }
+            return result;
+        }
+
         public boolean doesTableExist(String name) {
             return tables.containsKey(name);
+        }
+
+        public boolean doesTableContainColumn(String tableName, String columnName) {
+            List<ColumnSpec> table = schema(tableName);
+            return table.stream().anyMatch(column -> column.name().equals(columnName));
         }
 
         boolean isModified() {

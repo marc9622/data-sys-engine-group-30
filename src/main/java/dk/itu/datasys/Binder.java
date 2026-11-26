@@ -16,13 +16,7 @@ import dk.itu.datasys.StorageEngine.Catalog;
 public final class Binder {
     private static final Logger LOGGER = LoggerFactory.getLogger(Binder.class);
 
-    private final StorageEngine engine;
-
-    public Binder(StorageEngine engine) {
-        this.engine = Objects.requireNonNull(engine, "engine");
-    }
-
-    public void bindStatement(Catalog catalog, Statement s) {
+    public static void bindStatement(Catalog catalog, Statement s) {
         Objects.requireNonNull(s, "s");
 
         switch (s) {
@@ -33,7 +27,7 @@ public final class Binder {
         }
     }
 
-    private void bindCreateTable(Catalog catalog, Statement.CreateTable create) {
+    private static void bindCreateTable(Catalog catalog, Statement.CreateTable create) {
         String table = create.tableName();
         if (catalog.doesTableExist(table))
             throw new IllegalArgumentException("table already exists: " + table);
@@ -54,7 +48,7 @@ public final class Binder {
         LOGGER.debug("bound create table statement table={} columns={}", create.tableName(), columns.size());
     }
 
-    private void bindCopy(Catalog catalog, Statement.Copy copy) {
+    private static void bindCopy(Catalog catalog, Statement.Copy copy) {
         String table = copy.tableName();
         if (!catalog.doesTableExist(table))
             throw new IllegalArgumentException("table does not exist: " + table);
@@ -62,7 +56,7 @@ public final class Binder {
         LOGGER.debug("bound copy statement table={} csvFilePath={}", table, copy.csvFilePath());
     }
 
-    private void bindSelect(Catalog catalog, Statement.Select select) {
+    private static void bindSelect(Catalog catalog, Statement.Select select) {
         for (String table : select.tableNames()) {
             if (!catalog.doesTableExist(table))
                 throw new IllegalArgumentException("table does not exist: " + table);
@@ -71,7 +65,7 @@ public final class Binder {
         List<String> selectColumns = select.columns();
         if (selectColumns.isEmpty()) {
             for (String table : select.tableNames()) {
-                for (ColumnSpec column : engine.schema(catalog, table))
+                for (ColumnSpec column : catalog.schema(table))
                     selectColumns.add(column.name());
             }
         }
@@ -79,7 +73,7 @@ public final class Binder {
         List<ColumnSpec> fullSchema = new ArrayList<>();
         for (String selectColumn : selectColumns) {
             List<ColumnSpec> matches = select.tableNames().stream()
-                .flatMap(table -> engine.schema(catalog, table).stream())
+                .flatMap(table -> catalog.schema(table).stream())
                 .toList();
 
             if (matches.isEmpty()) throw new IllegalArgumentException("unknown column: " + selectColumn);
@@ -88,8 +82,10 @@ public final class Binder {
             fullSchema.add(matches.getFirst());
         }
 
+        List<StorageEngine.TableMeta> tables = catalog.tablesFromNames(select.tableNames());
+
         select.filters().forEach(filter -> bindFilter(fullSchema, filter));
-        select.joins().forEach(join -> bindJoinOn(fullSchema, join));
+        select.joins().forEach(join -> bindJoinOn(tables, join));
 
         Optional<Integer> limit = select.limit();
         limit.ifPresent(count -> {
@@ -116,12 +112,12 @@ public final class Binder {
         return; 
     }
 
-    private void bindDelete(Catalog catalog, Statement.Delete delete) {
+    private static void bindDelete(Catalog catalog, Statement.Delete delete) {
         String table = delete.tableName();
         if (!catalog.doesTableExist(table))
             throw new IllegalArgumentException("table does not exist: " + table);
 
-        List<ColumnSpec> schema = engine.schema(catalog, table);
+        List<ColumnSpec> schema = catalog.schema(table);
 
         Optional<Statement.FilterPredicate> filter = delete.filter();
         if (filter.isPresent()) {
@@ -134,7 +130,7 @@ public final class Binder {
         }
     }
 
-    private void bindFilter(List<ColumnSpec> schema, Statement.FilterPredicate filter) {
+    private static void bindFilter(List<ColumnSpec> schema, Statement.FilterPredicate filter) {
         ColumnSpec target = schema.stream()
             .filter(c -> c.name().equals(filter.columnName()))
             .findFirst()
@@ -144,15 +140,26 @@ public final class Binder {
             throw new IllegalArgumentException("constant type does not match column type");
     }
 
-    private void bindJoinOn(List<ColumnSpec> fullSchema, Statement.JoinPredicate join) {
-        ColumnSpec leftTarget = fullSchema.stream()
-            .filter(column -> column.name().equals(join.leftColumnName()))
-            .findAny()
-            .orElseThrow(() -> new IllegalArgumentException("unknown column: " + join.leftColumnName()));
-        ColumnSpec rightTarget = fullSchema.stream()
-            .filter(column -> column.name().equals(join.rightColumnName()))
-            .findAny()
-            .orElseThrow(() -> new IllegalArgumentException("unknown column: " + join.rightColumnName()));
+    private static record TableAndColumn(StorageEngine.TableMeta table, ColumnType type) {}
+    private static TableAndColumn findColumn(List<StorageEngine.TableMeta> tables, String columnName) {
+        for (StorageEngine.TableMeta table : tables) {
+            for (ColumnSpec column : table.columns) {
+                if (!column.name().equals(columnName))
+                    continue;
+
+                return new TableAndColumn(table, column.type());
+            }
+        }
+
+        throw new IllegalArgumentException("unknown column: " + columnName);
+    }
+
+    private static void bindJoinOn(List<StorageEngine.TableMeta> tables, Statement.JoinPredicate join) {
+        TableAndColumn leftTarget = findColumn(tables, join.leftColumnName());
+        TableAndColumn rightTarget = findColumn(tables, join.rightColumnName());
+
+        if (leftTarget.table() == rightTarget.table())
+            throw new IllegalArgumentException("join columns must be from different tables");
 
         if (!typesMatch(leftTarget.type(), rightTarget.type()))
             throw new IllegalArgumentException("join columns must have the same type");

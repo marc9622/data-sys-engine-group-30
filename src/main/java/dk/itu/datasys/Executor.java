@@ -20,7 +20,6 @@ public final class Executor {
 
     private final StorageEngine engine;
     private final SqlParser parser;
-    private final Binder binder;
     private final Planner planner;
 
     private ScanStats lastScanStats = null;
@@ -28,7 +27,6 @@ public final class Executor {
     public Executor(StorageEngine engine) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.parser = new SqlParser();
-        this.binder = new Binder(engine);
         this.planner = new Planner(engine);
     }
 
@@ -67,7 +65,7 @@ public final class Executor {
 
         try {
             Utils.logExceptions(LOGGER, "failed to bind statement", () ->
-                binder.bindStatement(catalog, statement));
+                Binder.bindStatement(catalog, statement));
 
             List<Object[]> result = switch (statement) {
                 case Statement.CreateTable create ->

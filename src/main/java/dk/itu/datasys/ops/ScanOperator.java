@@ -32,7 +32,7 @@ public final class ScanOperator implements Operator {
 
     @Override
     public List<ColumnSpec> schema() {
-        return engine.schema(catalog, tableName);
+        return catalog.schema(tableName);
     }
 
     @Override
