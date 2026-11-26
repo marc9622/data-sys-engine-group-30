@@ -91,4 +91,67 @@ class BinderTest {
                         .where("distance", Comparison.EQUALS, "not a long")
                         .statement()));
     }
+
+    @Test
+    void rejectsAmbiguousColumnInMultipleTables(@TempDir Path tempDir) {
+        StorageEngine engine = new StorageEngine(tempDir);
+        createTableWithCatalog(engine, "orders", List.of(
+                new ColumnSpec("id", ColumnType.LONG),
+                new ColumnSpec("o_name", ColumnType.STRING)));
+        createTableWithCatalog(engine, "customers", List.of(
+                new ColumnSpec("id", ColumnType.LONG),
+                new ColumnSpec("c_name", ColumnType.STRING)));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> 
+            Binder.bindStatement(
+                engine.viewCatalogForTesting(),
+                Statement.select(List.of("orders", "customers"))
+                    .joinOn("id", "c_name")
+                    .statement()));
+        
+        assertTrue(error.getMessage().contains("ambiguous") || error.getMessage().contains("Ambiguous"),
+                "Error message should mention ambiguous column");
+    }
+
+    @Test
+    void rejectsTypeMismatchedJoin(@TempDir Path tempDir) {
+        StorageEngine engine = new StorageEngine(tempDir);
+        createTableWithCatalog(engine, "orders", List.of(
+                new ColumnSpec("o_orderkey", ColumnType.LONG),
+                new ColumnSpec("o_name", ColumnType.STRING)));
+        createTableWithCatalog(engine, "products", List.of(
+                new ColumnSpec("p_price", ColumnType.DOUBLE),
+                new ColumnSpec("p_name", ColumnType.STRING)));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> 
+            Binder.bindStatement(
+                engine.viewCatalogForTesting(),
+                Statement.select(List.of("orders", "products"))
+                    .joinOn("o_orderkey", "p_price")
+                    .statement()));
+        
+        assertTrue(error.getMessage().contains("type") || error.getMessage().contains("Type") || 
+                   error.getMessage().contains("mismatch"),
+                "Error message should mention type mismatch");
+    }
+
+    @Test
+    void rejectsJoinWithBothSidesInSameTable(@TempDir Path tempDir) {
+        StorageEngine engine = new StorageEngine(tempDir);
+        createTableWithCatalog(engine, "orders", List.of(
+                new ColumnSpec("o_orderkey", ColumnType.LONG),
+                new ColumnSpec("o_custkey", ColumnType.LONG)));
+        createTableWithCatalog(engine, "products", List.of(
+                new ColumnSpec("p_name", ColumnType.STRING)));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> 
+            Binder.bindStatement(
+                engine.viewCatalogForTesting(),
+                Statement.select(List.of("orders", "products"))
+                    .joinOn("o_orderkey", "o_custkey")
+                    .statement()));
+        
+        assertTrue(error.getMessage().contains("different"),
+                "Error message should indicate the join columns must be from different tables: " + error.getMessage());
+    }
 }
