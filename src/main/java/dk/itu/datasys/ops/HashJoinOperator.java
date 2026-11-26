@@ -43,6 +43,14 @@ public final class HashJoinOperator implements Operator {
         schema.addAll(probeChild.schema());
     }
 
+    public Operator buildChildForTesting() {
+        return buildChild;
+    }
+
+    public Operator probeChildForTesting() {
+        return probeChild;
+    }
+
     @Override
     public void open() {
         if (buildColumn >= buildChild.schema().size() || probeColumn >= probeChild.schema().size())

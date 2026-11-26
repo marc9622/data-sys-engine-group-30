@@ -66,7 +66,16 @@ class PlannerTest {
         try {
             Plan unfilteredPlan = planner.plan(catalog, fourTableQuery);
 
-            assertInstanceOf(HashJoinOperator.class, unfilteredPlan.root());
+            HashJoinOperator joinCities = assertInstanceOf(HashJoinOperator.class, unfilteredPlan.root());
+            assertEquals(citiesColumns, joinCities.probeChildForTesting().schema());
+            HashJoinOperator joinProducts =
+                    assertInstanceOf(HashJoinOperator.class, joinCities.buildChildForTesting());
+            assertEquals(productsColumns, joinProducts.probeChildForTesting().schema());
+            HashJoinOperator joinCustomers =
+                    assertInstanceOf(HashJoinOperator.class, joinProducts.buildChildForTesting());
+            assertEquals(customersColumns, joinCustomers.probeChildForTesting().schema());
+            assertInstanceOf(ScanOperator.class, joinCustomers.buildChildForTesting());
+            assertEquals(ordersColumns, joinCustomers.buildChildForTesting().schema());
             assertEquals(List.of("o_orderkey", "o_custname", "o_prodname", "o_quantity",
                             "c_name", "c_city", "p_name", "p_price", "ct_city", "ct_country", "ct_population"),
                     unfilteredPlan.root().schema().stream().map(ColumnSpec::name).toList());
@@ -78,6 +87,12 @@ class PlannerTest {
                     .statement();
             Plan filteredPlan = planner.plan(catalog, filteredQuery);
 
+            HashJoinOperator filteredJoinCities = assertInstanceOf(HashJoinOperator.class, filteredPlan.root());
+            HashJoinOperator filteredJoinProducts =
+                    assertInstanceOf(HashJoinOperator.class, filteredJoinCities.buildChildForTesting());
+            HashJoinOperator filteredJoinCustomers =
+                    assertInstanceOf(HashJoinOperator.class, filteredJoinProducts.buildChildForTesting());
+            assertInstanceOf(FilterOperator.class, filteredJoinCustomers.buildChildForTesting());
             assertEquals(new StorageEngine.ScanStats(6, 5, 1), filteredPlan.scanStats());
             List<Object[]> rows = exhaust(filteredPlan);
             assertEquals(1, rows.size());
