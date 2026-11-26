@@ -18,6 +18,7 @@ import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.FilterPredicate;
 import dk.itu.datasys.StorageEngine;
 import dk.itu.datasys.StorageEngine.Catalog;
+import dk.itu.datasys.TestingUtils.Streams;
 
 class OperatorTest {
 
@@ -234,5 +235,137 @@ class OperatorTest {
             List<ColumnSpec> columnsSchema = assertOp.openExhaustCloseAndGetSchema();
             assertEquals(countSchema, columnsSchema);
         }
+    }
+
+    @Test
+    void hashJoinOperatorDropsUnmatchedRows() {
+        List<ColumnSpec> customersSchema = List.of(
+                new ColumnSpec("c_name", ColumnType.STRING),
+                new ColumnSpec("c_city", ColumnType.STRING));
+        List<ColumnSpec> ordersSchema = List.of(
+                new ColumnSpec("o_custname", ColumnType.STRING),
+                new ColumnSpec("o_prodname", ColumnType.STRING));
+
+        List<Object[]> customersRows = List.of(
+                new Object[] {"Anna", "Copenhagen"},
+                new Object[] {"Bob", "Aarhus"},
+                new Object[] {"Carol", "Copenhagen"});
+
+        List<Object[]> ordersRows = List.of(
+                new Object[] {"Anna", "Bike"},
+                new Object[] {"Bob", "Helmet"});
+
+        MockOperator buildOp = new MockOperator(customersSchema, customersRows);
+        MockOperator probeOp = new MockOperator(ordersSchema, ordersRows);
+
+        HashJoinOperator joinOp = new HashJoinOperator(buildOp, probeOp, 0, 0);
+
+        List<ColumnSpec> expectedSchema = new ArrayList<>(customersSchema);
+        expectedSchema.addAll(ordersSchema);
+
+        List<Object[]> expectedRows = List.of(
+                new Object[] {"Anna", "Copenhagen", "Anna", "Bike"},
+                new Object[] {"Bob", "Aarhus", "Bob", "Helmet"});
+
+        AssertOperator assertOp = new AssertOperator(joinOp, expectedRows);
+        List<ColumnSpec> resultSchema = assertOp.openExhaustCloseAndGetSchema();
+        assertEquals(expectedSchema, resultSchema);
+    }
+
+    @Test
+    void hashJoinOperatorMultipliesDuplicateKeys() {
+        List<ColumnSpec> customersSchema = List.of(new ColumnSpec("c_name", ColumnType.STRING));
+        List<ColumnSpec> ordersSchema = List.of(new ColumnSpec("o_custname", ColumnType.STRING));
+
+        List<Object[]> customersRows = List.of(
+                new Object[] {"Anna"},
+                new Object[] {"Anna"});
+
+        List<Object[]> ordersRows = List.of(
+                new Object[] {"Anna"},
+                new Object[] {"Anna"},
+                new Object[] {"Anna"});
+
+        MockOperator buildOp = new MockOperator(customersSchema, customersRows);
+        MockOperator probeOp = new MockOperator(ordersSchema, ordersRows);
+
+        HashJoinOperator joinOp = new HashJoinOperator(buildOp, probeOp, 0, 0);
+
+        List<Object[]> expectedRows = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 2; j++) {
+                expectedRows.add(new Object[] {"Anna", "Anna"});
+            }
+        }
+
+        AssertOperator assertOp = new AssertOperator(joinOp, expectedRows);
+        assertOp.openExhaustCloseAndGetSchema();
+    }
+
+    @Test
+    void hashJoinOperatorEmptyBuildSideProducesNoRows() {
+        List<ColumnSpec> customersSchema = List.of(new ColumnSpec("c_name", ColumnType.STRING));
+        List<ColumnSpec> ordersSchema = List.of(new ColumnSpec("o_custname", ColumnType.STRING));
+
+        List<Object[]> customersRows = List.of();
+
+        List<Object[]> ordersRows = List.of(
+                new Object[] {"Anna"},
+                new Object[] {"Bob"},
+                new Object[] {"Carol"});
+
+        MockOperator buildOp = new MockOperator(customersSchema, customersRows);
+        MockOperator probeOp = new MockOperator(ordersSchema, ordersRows);
+
+        HashJoinOperator joinOp = new HashJoinOperator(buildOp, probeOp, 0, 0);
+
+        AssertOperator assertOp = new AssertOperator(joinOp, List.of());
+        assertOp.openExhaustCloseAndGetSchema();
+    }
+
+    @Test
+    void hashJoinOperatorEmptyProbeSideProducesNoRows() {
+        List<ColumnSpec> customersSchema = List.of(new ColumnSpec("c_name", ColumnType.STRING));
+        List<ColumnSpec> ordersSchema = List.of(new ColumnSpec("o_custname", ColumnType.STRING));
+
+        List<Object[]> customersRows = List.of(
+                new Object[] {"Anna"},
+                new Object[] {"Bob"});
+
+        List<Object[]> ordersRows = List.of();
+
+        MockOperator buildOp = new MockOperator(customersSchema, customersRows);
+        MockOperator probeOp = new MockOperator(ordersSchema, ordersRows);
+
+        HashJoinOperator joinOp = new HashJoinOperator(buildOp, probeOp, 0, 0);
+
+        AssertOperator assertOp = new AssertOperator(joinOp, List.of());
+        assertOp.openExhaustCloseAndGetSchema();
+    }
+
+    @Test
+    void hashJoinOperatorCursorHandlesConsecutiveMatchesCorrectly() {
+        List<ColumnSpec> customersSchema = List.of(new ColumnSpec("c_name", ColumnType.STRING));
+        List<ColumnSpec> ordersSchema = List.of(new ColumnSpec("o_custname", ColumnType.STRING));
+
+        List<Object[]> customersRows = List.of(
+                new Object[] {"Anna"},
+                new Object[] {"Anna"});
+
+        List<Object[]> ordersRows = List.of(
+                new Object[] {"Anna"},
+                new Object[] {"Bob"});
+
+        MockOperator buildOp = new MockOperator(customersSchema, customersRows);
+        MockOperator probeOp = new MockOperator(ordersSchema, ordersRows);
+
+        HashJoinOperator joinOp = new HashJoinOperator(buildOp, probeOp, 0, 0);
+
+        List<Object[]> expectedRows = List.of(
+                new Object[] {"Anna", "Anna"},
+                new Object[] {"Anna", "Anna"});
+
+        AssertOperator assertOp = new AssertOperator(joinOp, expectedRows);
+        assertOp.openExhaustCloseAndGetSchema();
     }
 }
