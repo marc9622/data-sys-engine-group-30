@@ -3,10 +3,10 @@ CREATE TABLE products (p_name STRING, p_price DOUBLE);
 CREATE TABLE customers (c_name STRING, c_city STRING);
 CREATE TABLE cities (ct_city STRING, ct_country STRING, ct_population LONG);
 
-COPY orders FROM 'testbedData/orders.csv';
-COPY products FROM 'testbedData/products.csv';
-COPY customers FROM 'testbedData/customers.csv';
-COPY cities FROM 'testbedData/cities.csv';
+COPY orders FROM 'src/test/resources/orders.csv';
+COPY products FROM 'src/test/resources/products.csv';
+COPY customers FROM 'src/test/resources/customers.csv';
+COPY cities FROM 'src/test/resources/cities.csv';
 
 SELECT * FROM orders, customers
 WHERE o_custname = c_name;
