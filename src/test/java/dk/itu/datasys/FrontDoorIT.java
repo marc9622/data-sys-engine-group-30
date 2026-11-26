@@ -81,6 +81,73 @@ class FrontDoorIT {
         assertTrue(result.stderr().contains("Error:"));
     }
 
+    @Test
+    void compareJoinQueriesWithDuckDB(@TempDir Path tmp) throws IOException, InterruptedException {
+        Path script = tmp.resolve("join.sql");
+        Files.writeString(script, """
+                CREATE TABLE cities (ct_city STRING, ct_country STRING, ct_population LONG);
+                COPY cities FROM '%s';
+                CREATE TABLE customers (c_name STRING, c_city STRING);
+                COPY customers FROM '%s';
+                CREATE TABLE orders (o_orderkey LONG, o_custname STRING, o_prodname STRING, o_quantity LONG);
+                COPY orders FROM '%s';
+                CREATE TABLE products (p_name STRING, p_price DOUBLE);
+                COPY products FROM '%s';
+
+                SELECT * FROM orders, customers
+                WHERE o_custname = c_name;
+
+                SELECT * FROM orders, customers, products
+                WHERE o_custname = c_name AND o_prodname = p_name;
+
+                SELECT * FROM orders, customers, products, cities
+                WHERE o_custname = c_name AND o_prodname = p_name AND c_city = ct_city;
+
+                SELECT * FROM orders, customers, products
+                WHERE o_custname = c_name AND o_prodname = p_name AND c_city = 'Copenhagen';
+                """.formatted(resource("cities.csv"), resource("customers.csv"), resource("orders.csv"), resource("products.csv")));
+
+        Path scriptDuckDB = tmp.resolve("join-duckdb.sql");
+        Files.writeString(scriptDuckDB, """
+                CREATE TABLE cities (ct_city STRING, ct_country STRING, ct_population LONG);
+                COPY cities FROM '%s' (HEADER false);
+                CREATE TABLE customers (c_name STRING, c_city STRING);
+                COPY customers FROM '%s' (HEADER false);
+                CREATE TABLE orders (o_orderkey LONG, o_custname STRING, o_prodname STRING, o_quantity LONG);
+                COPY orders FROM '%s' (HEADER false);
+                CREATE TABLE products (p_name STRING, p_price DOUBLE);
+                COPY products FROM '%s' (HEADER false);
+
+                SELECT * FROM orders, customers
+                WHERE o_custname = c_name;
+
+                SELECT * FROM orders, customers, products
+                WHERE o_custname = c_name AND o_prodname = p_name;
+
+                SELECT * FROM orders, customers, products, cities
+                WHERE o_custname = c_name AND o_prodname = p_name AND c_city = ct_city;
+
+                SELECT * FROM orders, customers, products
+                WHERE o_custname = c_name AND o_prodname = p_name AND c_city = 'Copenhagen';
+                """.formatted(resource("cities.csv"), resource("customers.csv"), resource("orders.csv"), resource("products.csv")));
+
+        EngineResult engineResult = runEngine(tmp, script);
+        EngineResult duckdbResult = runDuckDB(tmp, scriptDuckDB);
+
+        assertEquals(0, engineResult.exitCode(), "Engine process failed, stderr: " + engineResult.stderr());
+        assertEquals(0, duckdbResult.exitCode(), "DuckDB process failed, stderr: " + duckdbResult.stderr());
+
+        List<String> engineLines = Stream.of(engineResult.stdout().split(System.lineSeparator()))
+                .sorted()
+                .toList();
+        List<String> duckdbLines = Stream.of(duckdbResult.stdout().split(System.lineSeparator()))
+                .sorted()
+                .toList();
+
+        assertEquals(duckdbLines, engineLines);
+    }
+
+    private record EngineResult(int exitCode, String stdout, String stderr) {}
     private static EngineResult runEngine(Path workingDirectory, Path script)
             throws IOException, InterruptedException {
         Path stdout = workingDirectory.resolve("stdout.txt");
@@ -108,5 +175,27 @@ class FrontDoorIT {
                 Files.readString(stderr, StandardCharsets.UTF_8));
     }
 
-    private record EngineResult(int exitCode, String stdout, String stderr) {}
+    private static EngineResult runDuckDB(Path workingDirectory, Path script) throws IOException, InterruptedException {
+        Path stdout = workingDirectory.resolve("duckdb_stdout.txt");
+        Path stderr = workingDirectory.resolve("duckdb_stderr.txt");
+        Process process = new ProcessBuilder(
+                "duckdb",
+                "-csv", "-noheader",
+                "-f", script.toString())
+                .directory(workingDirectory.toFile())
+                .redirectOutput(stdout.toFile())
+                .redirectError(stderr.toFile())
+                .start();
+
+        if (!process.waitFor(30, TimeUnit.SECONDS)) {
+            process.destroyForcibly().waitFor();
+            throw new AssertionError("DuckDB process timed out after 30 seconds, stderr: "
+                    + Files.readString(stderr, StandardCharsets.UTF_8));
+        }
+
+        int exitCode = process.exitValue();
+        return new EngineResult(exitCode,
+                Files.readString(stdout, StandardCharsets.UTF_8),
+                Files.readString(stderr, StandardCharsets.UTF_8));
+    }
 }
