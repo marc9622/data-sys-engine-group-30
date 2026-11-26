@@ -128,21 +128,10 @@ class PlannerTest {
     }
 
     private static Select loadTestbedData(StorageEngine engine) {
-        createTableWithCatalog(engine, "orders", List.of(
-                new ColumnSpec("o_orderkey", ColumnType.LONG),
-                new ColumnSpec("o_custname", ColumnType.STRING),
-                new ColumnSpec("o_prodname", ColumnType.STRING),
-                new ColumnSpec("o_quantity", ColumnType.LONG)));
-        createTableWithCatalog(engine, "customers", List.of(
-                new ColumnSpec("c_name", ColumnType.STRING),
-                new ColumnSpec("c_city", ColumnType.STRING)));
-        createTableWithCatalog(engine, "products", List.of(
-                new ColumnSpec("p_name", ColumnType.STRING),
-                new ColumnSpec("p_price", ColumnType.DOUBLE)));
-        createTableWithCatalog(engine, "cities", List.of(
-                new ColumnSpec("ct_city", ColumnType.STRING),
-                new ColumnSpec("ct_country", ColumnType.STRING),
-                new ColumnSpec("ct_population", ColumnType.LONG)));
+        createTableWithCatalog(engine, "orders", ordersColumns);
+        createTableWithCatalog(engine, "customers", customersColumns);
+        createTableWithCatalog(engine, "products", productsColumns);
+        createTableWithCatalog(engine, "cities", citiesColumns);
 
         copyFromCsvFileWithCatalog(engine, "orders", resource("orders.csv"));
         copyFromCsvFileWithCatalog(engine, "customers", resource("customers.csv"));
