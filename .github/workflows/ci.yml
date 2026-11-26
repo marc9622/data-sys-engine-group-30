@@ -13,4 +13,8 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+      - name: Install DuckDB CLI
+        run: |
+          curl -fsSL https://install.duckdb.org | sh
+          echo "$HOME/.duckdb/cli/latest" >> $GITHUB_PATH
       - run: mvn -B verify
