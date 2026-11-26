@@ -312,7 +312,7 @@ class SqlParserTest {
     }
 
     @Test
-    void parsesSeletLimits() {
+    void parsesSelectLimits() {
         SqlParser parser = new SqlParser();
 
         List<Statement> statements = parser.parse("""
