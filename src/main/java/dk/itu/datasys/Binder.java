@@ -1,6 +1,5 @@
 package dk.itu.datasys;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -57,35 +56,13 @@ public final class Binder {
     }
 
     private static void bindSelect(Catalog catalog, Statement.Select select) {
-        for (String table : select.tableNames()) {
-            if (!catalog.doesTableExist(table))
-                throw new IllegalArgumentException("table does not exist: " + table);
-        }
-
-        List<String> selectColumns = select.columns();
-        if (selectColumns.isEmpty()) {
-            for (String table : select.tableNames()) {
-                for (ColumnSpec column : catalog.schema(table))
-                    selectColumns.add(column.name());
-            }
-        }
-
-        List<ColumnSpec> fullSchema = new ArrayList<>();
-        for (String selectColumn : selectColumns) {
-            List<ColumnSpec> matches = select.tableNames().stream()
-                .flatMap(table -> catalog.schema(table).stream())
-                .toList();
-
-            if (matches.isEmpty()) throw new IllegalArgumentException("unknown column: " + selectColumn);
-            if (matches.size() > 1) throw new IllegalArgumentException("ambiguous column: " + selectColumn);
-
-            fullSchema.add(matches.getFirst());
-        }
-
-        List<StorageEngine.TableMeta> tables = catalog.tablesFromNames(select.tableNames());
-
-        select.filters().forEach(filter -> bindFilter(fullSchema, filter));
-        select.joins().forEach(join -> bindJoinOn(tables, join));
+        ColumnResolver resolver = new ColumnResolver(catalog, select.tableNames());
+        select.columns().forEach(resolver::resolve);
+        select.filters().forEach(filter -> {
+            ColumnResolver.Resolution target = resolver.resolve(filter.columnName());
+            bindFilter(List.of(target.column()), filter);
+        });
+        select.joins().forEach(join -> bindJoinOn(resolver, join));
 
         Optional<Integer> limit = select.limit();
         limit.ifPresent(count -> {
@@ -140,28 +117,14 @@ public final class Binder {
             throw new IllegalArgumentException("constant type does not match column type");
     }
 
-    private static record TableAndColumn(StorageEngine.TableMeta table, ColumnType type) {}
-    private static TableAndColumn findColumn(List<StorageEngine.TableMeta> tables, String columnName) {
-        for (StorageEngine.TableMeta table : tables) {
-            for (ColumnSpec column : table.columns) {
-                if (!column.name().equals(columnName))
-                    continue;
+    private static void bindJoinOn(ColumnResolver resolver, Statement.JoinPredicate join) {
+        ColumnResolver.Resolution leftTarget = resolver.resolve(join.leftColumnName());
+        ColumnResolver.Resolution rightTarget = resolver.resolve(join.rightColumnName());
 
-                return new TableAndColumn(table, column.type());
-            }
-        }
-
-        throw new IllegalArgumentException("unknown column: " + columnName);
-    }
-
-    private static void bindJoinOn(List<StorageEngine.TableMeta> tables, Statement.JoinPredicate join) {
-        TableAndColumn leftTarget = findColumn(tables, join.leftColumnName());
-        TableAndColumn rightTarget = findColumn(tables, join.rightColumnName());
-
-        if (leftTarget.table() == rightTarget.table())
+        if (leftTarget.tableName().equals(rightTarget.tableName()))
             throw new IllegalArgumentException("join columns must be from different tables");
 
-        if (!typesMatch(leftTarget.type(), rightTarget.type()))
+        if (leftTarget.column().type() != rightTarget.column().type())
             throw new IllegalArgumentException("join columns must have the same type");
     }
 

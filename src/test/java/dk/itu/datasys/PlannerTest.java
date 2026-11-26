@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.Select;
 import dk.itu.datasys.ops.FilterOperator;
+import dk.itu.datasys.ops.HashJoinOperator;
 import dk.itu.datasys.ops.ScanOperator;
 
 class PlannerTest {
@@ -53,5 +54,114 @@ class PlannerTest {
 
         assertInstanceOf(ScanOperator.class, plan.root());
         assertEquals(new StorageEngine.ScanStats(4, 4, 0), plan.scanStats());
+    }
+
+    @Test
+    void plansFourTableJoinLeftToRightInFromOrder(@TempDir Path tmp) {
+        StorageEngine engine = new StorageEngine(tmp);
+        Select fourTableQuery = loadTestbedData(engine);
+        Planner planner = new Planner(engine);
+
+        StorageEngine.Catalog catalog = engine.openCatalog();
+        try {
+            Plan unfilteredPlan = planner.plan(catalog, fourTableQuery);
+
+            assertInstanceOf(HashJoinOperator.class, unfilteredPlan.root());
+            assertEquals(List.of("o_orderkey", "o_custname", "o_prodname", "o_quantity",
+                            "c_name", "c_city", "p_name", "p_price", "ct_city", "ct_country", "ct_population"),
+                    unfilteredPlan.root().schema().stream().map(ColumnSpec::name).toList());
+            assertEquals(4, exhaust(unfilteredPlan).size());
+
+            Select filteredQuery = select(fourTableQuery.tableNames())
+                    .joinOn(fourTableQuery.joins())
+                    .where("o_orderkey", Comparison.EQUALS, 100L)
+                    .statement();
+            Plan filteredPlan = planner.plan(catalog, filteredQuery);
+
+            assertEquals(new StorageEngine.ScanStats(6, 5, 1), filteredPlan.scanStats());
+            List<Object[]> rows = exhaust(filteredPlan);
+            assertEquals(1, rows.size());
+            assertArrayEquals(new Object[] {
+                    100L, "Anna", "Bike", 1L,
+                    "Anna", "Copenhagen",
+                    "Bike", 2999.0,
+                    "Copenhagen", "Denmark", 1_400_000L
+            }, rows.getFirst());
+        } finally {
+            engine.closeCatalog(catalog);
+        }
+    }
+
+    @Test
+    void rejectsTableWithoutJoinToEarlierTableAndSuggestsReordering(@TempDir Path tmp) {
+        StorageEngine engine = new StorageEngine(tmp);
+        createTableWithCatalog(engine, "first", List.of(new ColumnSpec("first_key", ColumnType.STRING)));
+        createTableWithCatalog(engine, "isolated", List.of(new ColumnSpec("isolated_key", ColumnType.STRING)));
+        Planner planner = new Planner(engine);
+        Select select = select(List.of("first", "isolated")).statement();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> planner.plan(engine.openCatalog(), select));
+
+        assertTrue(error.getMessage().contains("reorder the FROM list"));
+    }
+
+    @Test
+    void rejectsMultiplePredicatesConnectingTheSameTable(@TempDir Path tmp) {
+        StorageEngine engine = new StorageEngine(tmp);
+        createTableWithCatalog(engine, "left_table", List.of(
+                new ColumnSpec("left_key", ColumnType.STRING),
+                new ColumnSpec("left_other", ColumnType.STRING)));
+        createTableWithCatalog(engine, "right_table", List.of(
+                new ColumnSpec("right_key", ColumnType.STRING),
+                new ColumnSpec("right_other", ColumnType.STRING)));
+        Planner planner = new Planner(engine);
+        Select select = select(List.of("left_table", "right_table"))
+                .joinOn("left_key", "right_key")
+                .joinOn("left_other", "right_other")
+                .statement();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> planner.plan(engine.openCatalog(), select));
+
+        assertTrue(error.getMessage().contains("only one connecting predicate"));
+    }
+
+    private static Select loadTestbedData(StorageEngine engine) {
+        createTableWithCatalog(engine, "orders", List.of(
+                new ColumnSpec("o_orderkey", ColumnType.LONG),
+                new ColumnSpec("o_custname", ColumnType.STRING),
+                new ColumnSpec("o_prodname", ColumnType.STRING),
+                new ColumnSpec("o_quantity", ColumnType.LONG)));
+        createTableWithCatalog(engine, "customers", List.of(
+                new ColumnSpec("c_name", ColumnType.STRING),
+                new ColumnSpec("c_city", ColumnType.STRING)));
+        createTableWithCatalog(engine, "products", List.of(
+                new ColumnSpec("p_name", ColumnType.STRING),
+                new ColumnSpec("p_price", ColumnType.DOUBLE)));
+        createTableWithCatalog(engine, "cities", List.of(
+                new ColumnSpec("ct_city", ColumnType.STRING),
+                new ColumnSpec("ct_country", ColumnType.STRING),
+                new ColumnSpec("ct_population", ColumnType.LONG)));
+
+        copyFromCsvFileWithCatalog(engine, "orders", Path.of("testbedData", "orders.csv").toAbsolutePath());
+        copyFromCsvFileWithCatalog(engine, "customers", Path.of("testbedData", "customers.csv").toAbsolutePath());
+        copyFromCsvFileWithCatalog(engine, "products", Path.of("testbedData", "products.csv").toAbsolutePath());
+        copyFromCsvFileWithCatalog(engine, "cities", Path.of("testbedData", "cities.csv").toAbsolutePath());
+
+        return select(List.of("orders", "customers", "products", "cities"))
+                .joinOn("o_custname", "c_name")
+                .joinOn("o_prodname", "p_name")
+                .joinOn("c_city", "ct_city")
+                .statement();
+    }
+
+    private static List<Object[]> exhaust(Plan plan) {
+        plan.root().open();
+        try {
+            return plan.root().exhaust();
+        } finally {
+            plan.root().close();
+        }
     }
 }

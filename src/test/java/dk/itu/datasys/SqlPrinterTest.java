@@ -21,6 +21,12 @@ class SqlPrinterTest {
 
         Statement selectWithoutWhere = Statement.select("trips").columns("city", "price").statement();
 
+        Statement selectWithJoins = Statement.select(List.of("orders", "customers", "products"))
+                .joinOn("o_custname", "c_name")
+                .where("o_orderkey", Comparison.GREATER_THAN, 100L)
+                .joinOn("o_prodname", "p_name")
+                .statement();
+
         Statement deleteWithWhere = Statement.delete("trips")
                 .where("distance", Comparison.GREATER_THAN, 100L)
                 .statement();
@@ -36,6 +42,8 @@ class SqlPrinterTest {
                 printer.print(selectWithWhere));
         assertEquals("SELECT city, price FROM trips;",
                 printer.print(selectWithoutWhere));
+        assertEquals("SELECT * FROM orders, customers, products WHERE o_orderkey > 100 AND o_custname = c_name AND o_prodname = p_name;",
+                printer.print(selectWithJoins));
         assertEquals("DELETE FROM trips WHERE distance > 100;",
                 printer.print(deleteWithWhere));
         assertEquals("DELETE FROM trips;",
@@ -52,6 +60,11 @@ class SqlPrinterTest {
                 Statement.copy("trips", "trips.csv"),
                 Statement.select("trips").where("distance", Comparison.GREATER_THAN, 100L).statement(),
                 Statement.select("trips").columns("city", "price").statement(),
+                Statement.select(List.of("orders", "customers", "products"))
+                        .joinOn("o_custname", "c_name")
+                        .where("o_orderkey", Comparison.GREATER_THAN, 100L)
+                        .joinOn("o_prodname", "p_name")
+                        .statement(),
                 Statement.delete("trips").statement(),
                 Statement.delete("trips").where("distance", Comparison.GREATER_THAN, 100L).statement());
 

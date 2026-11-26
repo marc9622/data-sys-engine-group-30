@@ -1,11 +1,7 @@
 package dk.itu.datasys;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.Catalog;
 import dk.itu.datasys.ops.FilterOperator;
+import dk.itu.datasys.ops.HashJoinOperator;
 import dk.itu.datasys.ops.LimitOperator;
 import dk.itu.datasys.ops.Operator;
 import dk.itu.datasys.ops.ProjectOperator;
@@ -27,55 +24,72 @@ public final class Planner {
         this.engine = Objects.requireNonNull(engine, "engine");
     }
 
+    /**
+     * Plans one scan pipeline per table and folds tables in FROM order.
+     * Only one predicate may connect each newly added table to the existing join.
+     */
     public Plan plan(Catalog catalog, Statement.Select select) {
         Objects.requireNonNull(select, "select");
+        ColumnResolver resolver = new ColumnResolver(catalog, select.tableNames());
+        int partitionsTotal = 0;
+        int partitionsRead = 0;
+        Operator root = null;
 
-        Map<String, List<StorageEngine.PartitionMeta>> allPartitions = new HashMap<>();
-        for (String table : select.tableNames())
-            allPartitions.put(table, engine.activePartitions(catalog, table));
-        allPartitions = Map.copyOf(allPartitions);
+        for (int tableIndex = 0; tableIndex < select.tableNames().size(); tableIndex++) {
+            String tableName = select.tableNames().get(tableIndex);
+            List<StorageEngine.PartitionMeta> allPartitions = engine.activePartitions(catalog, tableName);
+            List<Statement.FilterPredicate> tableFilters = select.filters().stream()
+                    .filter(filter -> resolver.resolve(filter.columnName()).tableName().equals(tableName))
+                    .toList();
+            List<StorageEngine.PartitionMeta> survivingPartitions = allPartitions.stream()
+                    .filter(partition -> tableFilters.stream().allMatch(filter ->
+                            partitionMayContain(partition, filter, resolver.resolve(filter.columnName()).tableColumnIndex(),
+                                    resolver.resolve(filter.columnName()).column().type())))
+                    .toList();
 
-        Map<String, List<StorageEngine.PartitionMeta>> survivingPartitions = new HashMap<>();
+            partitionsTotal += allPartitions.size();
+            partitionsRead += survivingPartitions.size();
 
-        if (select.filters().isEmpty()) {
-            survivingPartitions = Map.copyOf(allPartitions);
-
-            LOGGER.debug("table={} no-where partitions={} decision=READ", tableName, survivingPartitions.size());
-        }
-        else {
-            Statement.FilterPredicate predicate = select.where().get();
-            List<ColumnSpec> schema = engine.schema(catalog, tableName);
-            int columnIndex = columnIndex(schema, predicate.columnName());
-            ColumnType columnType = schema.get(columnIndex).type();
-
-            for (int partitionNumber = 0; partitionNumber < allPartitions.size(); partitionNumber++) {
-                StorageEngine.PartitionMeta partition = allPartitions.get(partitionNumber);
-                boolean canMatch = StorageEngine.partitionMayContain(
-                        partition.mins.get(columnIndex),
-                        partition.maxs.get(columnIndex),
-                        predicate.comparison(),
-                        predicate.constant(),
-                        columnType);
-
-                LOGGER.debug("table={} column={} comparison={} const={} partition={} min={} max={} decision={}",
-                        tableName, predicate.columnName(), predicate.comparison(), predicate.constant(),
-                        partitionNumber, partition.mins.get(columnIndex), partition.maxs.get(columnIndex),
-                        canMatch ? "READ" : "PRUNED");
-
-                if (canMatch)
-                    survivingPartitions.add(partition);
+            Operator tableRoot = new ScanOperator(engine, catalog, tableName, survivingPartitions);
+            for (Statement.FilterPredicate filter : tableFilters) {
+                int columnIndex = resolver.resolve(filter.columnName()).tableColumnIndex();
+                tableRoot = new FilterOperator(tableRoot, filter, columnIndex);
+                LOGGER.debug("added filter operation table={} where={}", tableName, filter);
             }
-        }
 
-        Operator root = new ScanOperator(engine, catalog, tableName, survivingPartitions);
+            if (root == null) {
+                root = tableRoot;
+                continue;
+            }
 
-        if (select.where().isPresent()) {
-            Statement.FilterPredicate predicate = select.where().get();
-            List<ColumnSpec> schema = engine.schema(catalog, tableName);
-            int columnIndex = columnIndex(schema, predicate.columnName());
-            root = new FilterOperator(root, predicate, columnIndex);
+            int currentTableIndex = tableIndex;
+            List<Statement.JoinPredicate> connectingJoins = select.joins().stream()
+                    .filter(join -> {
+                        String leftTable = resolver.resolve(join.leftColumnName()).tableName();
+                        String rightTable = resolver.resolve(join.rightColumnName()).tableName();
+                        return (leftTable.equals(tableName) && select.tableNames().subList(0, currentTableIndex).contains(rightTable))
+                                || (rightTable.equals(tableName) && select.tableNames().subList(0, currentTableIndex).contains(leftTable));
+                    })
+                    .toList();
 
-            LOGGER.debug("added filter operation where={}", predicate);
+            if (connectingJoins.isEmpty())
+                throw new IllegalArgumentException("no join predicate connects table " + tableName
+                        + " to the preceding tables; reorder the FROM list to place a connected table earlier");
+            if (connectingJoins.size() > 1)
+                throw new IllegalArgumentException("multiple join predicates connect table " + tableName
+                        + "; only one connecting predicate per table is supported");
+
+            Statement.JoinPredicate join = connectingJoins.getFirst();
+            ColumnResolver.Resolution left = resolver.resolve(join.leftColumnName());
+            ColumnResolver.Resolution right = resolver.resolve(join.rightColumnName());
+            boolean leftIsNewTable = left.tableName().equals(tableName);
+            ColumnResolver.Resolution buildKey = leftIsNewTable ? right : left;
+            ColumnResolver.Resolution probeKey = leftIsNewTable ? left : right;
+
+            root = new HashJoinOperator(root, tableRoot, buildKey.joinedColumnIndex(),
+                    probeKey.tableColumnIndex());
+            LOGGER.debug("added hash join table={} buildKey={} probeKey={}",
+                    tableName, buildKey.column().name(), probeKey.column().name());
         }
 
         if (!select.columns().isEmpty()) {
@@ -90,21 +104,21 @@ public final class Planner {
             LOGGER.debug("added limit operation limit={}", select.limit().get());
         }
 
-        int total = allPartitions.size();
         StorageEngine.ScanStats stats = new StorageEngine.ScanStats(
-                total, survivingPartitions.size(), total - survivingPartitions.size());
+                partitionsTotal, partitionsRead, partitionsTotal - partitionsRead);
 
-        LOGGER.debug("created plan table={} totalPartitions={} survivingPartitions={} prunedPartitions={}",
-                tableName, stats.partitionsTotal(), stats.partitionsRead(), stats.partitionsPruned());
+        LOGGER.debug("created plan tables=[{}] totalPartitions={} survivingPartitions={} prunedPartitions={}",
+                String.join(" ", select.tableNames()), stats.partitionsTotal(),
+                stats.partitionsRead(), stats.partitionsPruned());
 
         return new Plan(root, stats);
     }
 
-    private static int columnIndex(List<ColumnSpec> schema, String columnName) {
-        for (int index = 0; index < schema.size(); index++) {
-            if (schema.get(index).name().equals(columnName))
-                return index;
-        }
-        throw new IllegalArgumentException("unknown column: " + columnName);
+    private static boolean partitionMayContain(StorageEngine.PartitionMeta partition,
+                                               Statement.FilterPredicate filter,
+                                               int columnIndex,
+                                               ColumnType columnType) {
+        return StorageEngine.partitionMayContain(partition.mins.get(columnIndex),
+                partition.maxs.get(columnIndex), filter.comparison(), filter.constant(), columnType);
     }
 }

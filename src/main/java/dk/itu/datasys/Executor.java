@@ -12,7 +12,6 @@ import org.slf4j.MDC;
 
 import dk.itu.datasys.StorageEngine.Catalog;
 import dk.itu.datasys.StorageEngine.ScanStats;
-import dk.itu.datasys.StorageEngine.TableMeta;
 import dk.itu.datasys.ops.Operator;
 
 public final class Executor {
@@ -126,12 +125,15 @@ public final class Executor {
 
         double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
         
-        TableMeta tableMeta = catalog.tables.get(select.tableName());
+        List<String> tablesWithVersions = select.tableNames().stream()
+                .map(tableName -> tableName + "(version=" + catalog.tables.get(tableName).version + ")")
+                .toList();
 
         double elapsedMs = planningMs + executionMs;
 
-        LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-            select.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableMeta.version, elapsedMs);
+        LOGGER.debug("statement=SELECT tables=[{}] rowsOut={} partitionsRead={} partitionsPruned={} durationMs={}",
+            String.join(" ", tablesWithVersions), rows.size(), lastScanStats.partitionsRead(),
+            lastScanStats.partitionsPruned(), elapsedMs);
         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
             planningMs, executionMs, elapsedMs);
                 

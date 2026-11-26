@@ -71,7 +71,9 @@ public final class SqlAstBuilder extends SqlBaseVisitor<Object> {
             .map(table -> table.getText())
             .toList();
 
-        List<Statement.Predicate> predicates = visitCondition(context.condition());
+        List<Statement.Predicate> predicates = context.condition() == null
+                ? List.of()
+                : visitCondition(context.condition());
 
         List<Statement.FilterPredicate> filters = new ArrayList<>();
         List<Statement.JoinPredicate> joins = new ArrayList<>();

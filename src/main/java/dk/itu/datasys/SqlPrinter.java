@@ -57,18 +57,26 @@ public final class SqlPrinter {
             sb.append(select.tableNames().get(i));
         }
 
-        if (!select.filters().isEmpty() || select.joins().isEmpty())
+        if (!select.filters().isEmpty() || !select.joins().isEmpty())
             sb.append(" WHERE ");
 
-        int predicateCount = 0;
-        for (int i = 0; i < select.filters().size(); i++, predicateCount++) {
-            if (predicateCount > 0) sb.append(" AND ");
-            Statement.FilterPredicate filter = select.filters().get(i);
+        boolean firstPredicate = true;
+        for (Statement.FilterPredicate filter : select.filters()) {
+            if (!firstPredicate) sb.append(" AND ");
             sb.append(filter.columnName())
               .append(" ")
               .append(comparisonSql(filter.comparison()))
               .append(" ")
               .append(literalSql(filter.constant()));
+            firstPredicate = false;
+        }
+
+        for (Statement.JoinPredicate join : select.joins()) {
+            if (!firstPredicate) sb.append(" AND ");
+            sb.append(join.leftColumnName())
+              .append(" = ")
+              .append(join.rightColumnName());
+            firstPredicate = false;
         }
 
         if (select.limit().isPresent()) {

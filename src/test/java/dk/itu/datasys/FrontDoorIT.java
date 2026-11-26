@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -24,20 +25,11 @@ class FrontDoorIT {
                 SELECT city, price FROM trips WHERE city = 'Odense';
                 """.formatted(resource("trips.csv").toString())); 
 
-        String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString(); 
-        Process process = new ProcessBuilder(
-            javaExecutable,
-            "-cp", System.getProperty("java.class.path"),
-            "dk.itu.datasys.Engine",
-            "-f", script.toString())
-            .directory(tmp.toFile())
-            .start();
+        EngineResult result = runEngine(tmp, script);
+        if (result.exitCode() != 0)
+            throw new AssertionError("Process exited with code " + result.exitCode() + ", stderr: " + result.stderr());
 
-        int exitCode = process.waitFor();
-        if (exitCode != 0)
-            throw new AssertionError("Process exited with code " + exitCode + ", stderr: " + new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8));
-
-        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stdout = result.stdout();
         String[] lines = stdout.split(System.lineSeparator());
 
         assertEquals(2, lines.length);
@@ -56,20 +48,11 @@ class FrontDoorIT {
                 SELECT * FROM trips;
                 """.formatted(resource("trips.csv"), resource("trips.csv")));
 
-        String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString(); 
-        Process process = new ProcessBuilder(
-            javaExecutable,
-            "-cp", System.getProperty("java.class.path"),
-            "dk.itu.datasys.Engine",
-            "-f", script.toString())
-            .directory(tmp.toFile())
-            .start();
-
-        int exitCode = process.waitFor();
-        if (exitCode != 0)
-            throw new AssertionError("Process exited with code " + exitCode + ", stderr: " + new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8));
+        EngineResult result = runEngine(tmp, script);
+        if (result.exitCode() != 0)
+            throw new AssertionError("Process exited with code " + result.exitCode() + ", stderr: " + result.stderr());
         
-        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stdout = result.stdout();
         String[] lines = stdout.split(System.lineSeparator());
      
         List<String> expected = tripsRows.stream()
@@ -91,21 +74,39 @@ class FrontDoorIT {
         Path script = tmp.resolve("failing.sql");
         Files.writeString(script, "SELECT * FROM missing;");
 
-        String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString(); 
-        Process process = new ProcessBuilder(
-            javaExecutable,
-            "-cp", System.getProperty("java.class.path"),
-            "dk.itu.datasys.Engine",
-            "-f", script.toString())
-            .directory(tmp.toFile())
-            .start();
+        EngineResult result = runEngine(tmp, script);
 
-        int exitCode = process.waitFor();
-        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-
-        assertNotEquals(0, exitCode);
-        assertEquals("", stdout);
-        assertTrue(stderr.contains("Error:"));
+        assertNotEquals(0, result.exitCode());
+        assertEquals("", result.stdout());
+        assertTrue(result.stderr().contains("Error:"));
     }
+
+    private static EngineResult runEngine(Path workingDirectory, Path script)
+            throws IOException, InterruptedException {
+        Path stdout = workingDirectory.resolve("stdout.txt");
+        Path stderr = workingDirectory.resolve("stderr.txt");
+        String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        Process process = new ProcessBuilder(
+                javaExecutable,
+                "-cp", System.getProperty("java.class.path"),
+                "dk.itu.datasys.Engine",
+                "-f", script.toString())
+                .directory(workingDirectory.toFile())
+                .redirectOutput(stdout.toFile())
+                .redirectError(stderr.toFile())
+                .start();
+
+        if (!process.waitFor(30, TimeUnit.SECONDS)) {
+            process.destroyForcibly().waitFor();
+            throw new AssertionError("Engine process timed out after 30 seconds, stderr: "
+                    + Files.readString(stderr, StandardCharsets.UTF_8));
+        }
+
+        int exitCode = process.exitValue();
+        return new EngineResult(exitCode,
+                Files.readString(stdout, StandardCharsets.UTF_8),
+                Files.readString(stderr, StandardCharsets.UTF_8));
+    }
+
+    private record EngineResult(int exitCode, String stdout, String stderr) {}
 }

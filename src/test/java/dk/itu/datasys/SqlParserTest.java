@@ -297,6 +297,21 @@ class SqlParserTest {
     }
 
     @Test
+    void parsesTableListsAndMixedAndPredicates() {
+        SqlParser parser = new SqlParser();
+
+        Statement select = parser.parse("""
+                SELECT * FROM orders, customers, products
+                WHERE o_custname = c_name AND o_orderkey > 100 AND o_prodname = p_name;""").getFirst();
+
+        assertEquals(Statement.select(List.of("orders", "customers", "products"))
+                .where("o_orderkey", Comparison.GREATER_THAN, 100L)
+                .joinOn("o_custname", "c_name")
+                .joinOn("o_prodname", "p_name")
+                .statement(), select);
+    }
+
+    @Test
     void parsesSeletLimits() {
         SqlParser parser = new SqlParser();
 
