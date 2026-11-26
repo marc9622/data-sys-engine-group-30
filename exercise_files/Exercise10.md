@@ -122,13 +122,13 @@ This creates the tag that the teaching assistant will check out to validate your
 
 ## Definition of done
 
-- [ ] Grammar and AST grown: table lists, `AND` conjunctions, join predicates; round-trip property still holds.
-- [ ] Binder resolves unqualified names to exactly one table; ambiguity and type-mismatched joins rejected with clear errors.
-- [ ] Joins of at least four tables execute through the main query path, left-deep in `FROM`-list order.
-- [ ] Filters pushed below the joins; partition pruning still works per table.
-- [ ] Every join logs `rowsBuild`, `rowsProbe`, `rowsOut` in `close()`.
-- [ ] All required tests green in CI; PRs reviewed.
-- [ ] Tag `v0.10` is pushed.
+- [x] Grammar and AST grown: table lists, `AND` conjunctions, join predicates; round-trip property still holds.
+- [x] Binder resolves unqualified names to exactly one table; ambiguity and type-mismatched joins rejected with clear errors.
+- [x] Joins of at least four tables execute through the main query path, left-deep in `FROM`-list order.
+- [x] Filters pushed below the joins; partition pruning still works per table.
+- [x] Every join logs `rowsBuild`, `rowsProbe`, `rowsOut` in `close()`.
+- [x] All required tests green in CI; PRs reviewed.
+- [x] Tag `v0.10` is pushed.
 
 ## Outlook
 

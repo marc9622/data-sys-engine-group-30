@@ -33,5 +33,5 @@ Five minutes, three steps, live in class. Live means commands typed into a termi
 ## Definition of done
 
 - [x] Conflict evidence generated from your own engine.
-- [ ] Report of 3–5 pages, submitted via LearnIT.
+- [x] Report of 3–5 pages, submitted via LearnIT.
 - [x] Demo ready (optional).
