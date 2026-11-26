@@ -18,14 +18,12 @@ public final class Executor {
     private static final Logger LOGGER = LoggerFactory.getLogger(Executor.class);
 
     private final StorageEngine engine;
-    private final SqlParser parser;
     private final Planner planner;
 
     private ScanStats lastScanStats = null;
 
     public Executor(StorageEngine engine) {
         this.engine = Objects.requireNonNull(engine, "engine");
-        this.parser = new SqlParser();
         this.planner = new Planner(engine);
     }
 
@@ -38,7 +36,7 @@ public final class Executor {
             List<List<Object[]>> results = new ArrayList<>(); 
 
             List<Statement> statements = Utils.logExceptions(LOGGER, "failed to parse query", () ->
-                    parser.parse(sqlText));
+                    SqlParser.parse(sqlText));
 
             for (int statementNumber = 0; statementNumber < statements.size(); statementNumber++) {
                 Statement statement = statements.get(statementNumber);

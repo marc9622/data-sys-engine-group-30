@@ -144,10 +144,10 @@ class PlannerTest {
                 new ColumnSpec("ct_country", ColumnType.STRING),
                 new ColumnSpec("ct_population", ColumnType.LONG)));
 
-        copyFromCsvFileWithCatalog(engine, "orders", Path.of("testbedData", "orders.csv").toAbsolutePath());
-        copyFromCsvFileWithCatalog(engine, "customers", Path.of("testbedData", "customers.csv").toAbsolutePath());
-        copyFromCsvFileWithCatalog(engine, "products", Path.of("testbedData", "products.csv").toAbsolutePath());
-        copyFromCsvFileWithCatalog(engine, "cities", Path.of("testbedData", "cities.csv").toAbsolutePath());
+        copyFromCsvFileWithCatalog(engine, "orders", resource("orders.csv"));
+        copyFromCsvFileWithCatalog(engine, "customers", resource("customers.csv"));
+        copyFromCsvFileWithCatalog(engine, "products", resource("products.csv"));
+        copyFromCsvFileWithCatalog(engine, "cities", resource("cities.csv"));
 
         return select(List.of("orders", "customers", "products", "cities"))
                 .joinOn("o_custname", "c_name")

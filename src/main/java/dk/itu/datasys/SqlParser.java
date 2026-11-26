@@ -18,7 +18,7 @@ import dk.itu.datasys.sql.SqlParser.ScriptContext;
 public final class SqlParser {
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlParser.class);
 
-    public List<Statement> parse(String sqlText) {
+    public static List<Statement> parse(String sqlText) {
         Objects.requireNonNull(sqlText, "sqlText");  
 
         long startMs = System.currentTimeMillis();

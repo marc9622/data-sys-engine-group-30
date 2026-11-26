@@ -6,7 +6,7 @@ import java.util.Objects;
 import dk.itu.datasys.Spec.*;
 
 public final class SqlPrinter {
-    public String print(Statement statement) {
+    public static String print(Statement statement) {
         Objects.requireNonNull(statement, "statement");
 
         return switch (statement) {

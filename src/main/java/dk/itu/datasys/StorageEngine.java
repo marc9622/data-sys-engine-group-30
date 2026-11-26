@@ -421,13 +421,15 @@ public final class StorageEngine {
                 charNumber += fields[i].length() + 1; // +1 for the comma
             if (fields.length < cols.size())
                 charNumber -= 1;
-            return ParseCsvLineResult.malformed(charNumber, "Line has " + fields.length + " field(s) but expected " + cols.size());
+            return ParseCsvLineResult.malformed(charNumber,
+                    "Line has " + fields.length + " field(s) but expected " + cols.size());
         }
 
         Object[] parsed = new Object[fields.length];
         for (int i = 0; i < fields.length; i++) {
             String field = fields[i];
             ColumnType type = cols.get(i).type();
+
             try {
                 switch (type) {
                     case STRING -> parsed[i] = field;
@@ -435,7 +437,9 @@ public final class StorageEngine {
                     case DOUBLE -> parsed[i] = Double.valueOf(field);
                 }
             } catch (NumberFormatException e) {
-                return ParseCsvLineResult.malformed(charNumber, "Field `" + field + "` cannot be parsed as " + type, e);
+                String column = cols.get(i).name();
+                return ParseCsvLineResult.malformed(charNumber,
+                        "Field `" + field + "` cannot be parsed as " + type + " for column `" + column + "`", e);
             }
             charNumber += field.length() + 1; // +1 for the comma
         }

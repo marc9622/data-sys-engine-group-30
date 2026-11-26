@@ -267,8 +267,7 @@ class StorageEngineIT {
             "SELECT * FROM t WHERE distance > 100;");
 
         List<Object[]> actual = results.getLast();
-        List<Object[]> expected = parseCsvFile(resource("trips.csv"))
-            .stream()
+        List<Object[]> expected = tripsRows.stream()
             .filter(r -> (Long) r[1] > 100)
             .flatMap(r -> Stream.of(r, r))
             .toList();
@@ -304,9 +303,9 @@ class StorageEngineIT {
         StorageEngine e = new StorageEngine(tmp);
         Executor ex = new Executor(e);
 
-        int tripsSize = parseCsvFile(resource("trips.csv")).size();
+        int tripsSize = tripsRows.size();
 
-        int amountCopenhagenInTrips = (int) parseCsvFile(resource("trips.csv")).stream()
+        int amountCopenhagenInTrips = (int) tripsRows.stream()
             .filter(r -> r[0].equals("Copenhagen"))
             .count();
 
@@ -381,7 +380,7 @@ class StorageEngineIT {
         firstExecutor.executeScript("CREATE TABLE trips (city STRING, distance LONG, price DOUBLE);");
         firstExecutor.executeScript("COPY trips FROM '" + resource("trips.csv") + "';");
         firstExecutor.executeScript("DELETE FROM trips WHERE distance > 200;");
-        int expectedRows = parseCsvFile(resource("trips.csv")).stream().filter(r -> (Long) r[1] <= 200).toList().size();
+        int expectedRows = tripsRows.stream().filter(r -> (Long) r[1] <= 200).toList().size();
 
         assertTableVersion(2, first, "trips");
 
