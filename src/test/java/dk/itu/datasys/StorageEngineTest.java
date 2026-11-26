@@ -16,7 +16,7 @@ import org.junit.jupiter.api.io.TempDir;
 import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.StorageEngine.*;
 
-class StorageEngineUnitTest {
+class StorageEngineTest {
 
     @Test
     void encodeDecodeStringLongDouble(@TempDir Path tmp) throws IOException {
@@ -94,7 +94,7 @@ class StorageEngineUnitTest {
 
         ParseCsvLineResult.Malformed m3 = parseCsvLineAssertMalformed("Copenhagen,not a number", cols);
         assertEquals(11, m3.charNumber());
-        assertEquals("Field `not a number` cannot be parsed as LONG", m3.description());
+        assertEquals("Field `not a number` cannot be parsed as LONG for column `distance`", m3.description());
     }
 
     @Test

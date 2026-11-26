@@ -21,22 +21,20 @@ class BinderTest {
                 new ColumnSpec("distance", ColumnType.LONG),
                 new ColumnSpec("price", ColumnType.DOUBLE)));
 
-        Binder binder = new Binder(engine);
-
-        assertDoesNotThrow(() -> binder.bindStatement(
+        assertDoesNotThrow(() -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.copy("trips", "trips.csv")));
-        assertDoesNotThrow(() -> binder.bindStatement(
+        assertDoesNotThrow(() -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.createTable("other")
                         .addColumn("name", ColumnType.STRING)
                         .statement()));
-        assertDoesNotThrow(() -> binder.bindStatement(
+        assertDoesNotThrow(() -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("trips")
                         .where("distance", Comparison.GREATER_THAN, 100L)
                         .statement()));
-        assertDoesNotThrow(() -> binder.bindStatement(
+        assertDoesNotThrow(() -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.delete("trips")
                         .where("distance", Comparison.LESS_THAN, 50L)
@@ -51,23 +49,21 @@ class BinderTest {
                 new ColumnSpec("distance", ColumnType.LONG),
                 new ColumnSpec("price", ColumnType.DOUBLE)));
 
-        Binder binder = new Binder(engine);
-
-        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+        assertThrows(IllegalArgumentException.class, () -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("missing")
                         .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+        assertThrows(IllegalArgumentException.class, () -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("trips")
                         .where("missing", Comparison.EQUALS, 10L)
                         .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+        assertThrows(IllegalArgumentException.class, () -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.select("trips")
                         .where("distance", Comparison.EQUALS, "x")
                         .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+        assertThrows(IllegalArgumentException.class, () -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.createTable("duplicates")
                         .addColumn("a", ColumnType.STRING)
@@ -80,21 +76,82 @@ class BinderTest {
         StorageEngine engine = new StorageEngine(tempDir);
         createTableWithCatalog(engine, "trips", tripsColumns);
 
-        Binder binder = new Binder(engine);
-
-        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+        assertThrows(IllegalArgumentException.class, () -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.delete("missing")
                         .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+        assertThrows(IllegalArgumentException.class, () -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.delete("trips")
                         .where("missing", Comparison.EQUALS, 10L)
                         .statement()));
-        assertThrows(IllegalArgumentException.class, () -> binder.bindStatement(
+        assertThrows(IllegalArgumentException.class, () -> Binder.bindStatement(
                     engine.viewCatalogForTesting(),
                     Statement.delete("trips")
                         .where("distance", Comparison.EQUALS, "not a long")
                         .statement()));
+    }
+
+    @Test
+    void rejectsAmbiguousColumnInMultipleTables(@TempDir Path tempDir) {
+        StorageEngine engine = new StorageEngine(tempDir);
+        createTableWithCatalog(engine, "orders", List.of(
+                new ColumnSpec("id", ColumnType.LONG),
+                new ColumnSpec("o_name", ColumnType.STRING)));
+        createTableWithCatalog(engine, "customers", List.of(
+                new ColumnSpec("id", ColumnType.LONG),
+                new ColumnSpec("c_name", ColumnType.STRING)));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> 
+            Binder.bindStatement(
+                engine.viewCatalogForTesting(),
+                Statement.select(List.of("orders", "customers"))
+                    .joinOn("id", "c_name")
+                    .statement()));
+        
+        assertTrue(error.getMessage().contains("ambiguous") || error.getMessage().contains("Ambiguous"),
+                "Error message should mention ambiguous column");
+    }
+
+    @Test
+    void rejectsTypeMismatchedJoin(@TempDir Path tempDir) {
+        StorageEngine engine = new StorageEngine(tempDir);
+        createTableWithCatalog(engine, "orders", List.of(
+                new ColumnSpec("o_orderkey", ColumnType.LONG),
+                new ColumnSpec("o_name", ColumnType.STRING)));
+        createTableWithCatalog(engine, "products", List.of(
+                new ColumnSpec("p_price", ColumnType.DOUBLE),
+                new ColumnSpec("p_name", ColumnType.STRING)));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> 
+            Binder.bindStatement(
+                engine.viewCatalogForTesting(),
+                Statement.select(List.of("orders", "products"))
+                    .joinOn("o_orderkey", "p_price")
+                    .statement()));
+        
+        assertTrue(error.getMessage().contains("type") || error.getMessage().contains("Type") || 
+                   error.getMessage().contains("mismatch"),
+                "Error message should mention type mismatch");
+    }
+
+    @Test
+    void rejectsJoinWithBothSidesInSameTable(@TempDir Path tempDir) {
+        StorageEngine engine = new StorageEngine(tempDir);
+        createTableWithCatalog(engine, "orders", List.of(
+                new ColumnSpec("o_orderkey", ColumnType.LONG),
+                new ColumnSpec("o_custkey", ColumnType.LONG)));
+        createTableWithCatalog(engine, "products", List.of(
+                new ColumnSpec("p_name", ColumnType.STRING)));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> 
+            Binder.bindStatement(
+                engine.viewCatalogForTesting(),
+                Statement.select(List.of("orders", "products"))
+                    .joinOn("o_orderkey", "o_custkey")
+                    .statement()));
+        
+        assertTrue(error.getMessage().contains("different"),
+                "Error message should indicate the join columns must be from different tables: " + error.getMessage());
     }
 }

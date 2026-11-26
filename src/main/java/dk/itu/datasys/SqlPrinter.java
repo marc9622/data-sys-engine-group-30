@@ -6,7 +6,7 @@ import java.util.Objects;
 import dk.itu.datasys.Spec.*;
 
 public final class SqlPrinter {
-    public String print(Statement statement) {
+    public static String print(Statement statement) {
         Objects.requireNonNull(statement, "statement");
 
         return switch (statement) {
@@ -46,23 +46,37 @@ public final class SqlPrinter {
             sb.append("*");
         }
         else for (int i = 0; i < select.columns().size(); i++) {
-            String col = select.columns().get(i);
-            if (i > 0) {
-                sb.append(", ");
-            }
-            sb.append(col);
+            if (i > 0) sb.append(", ");
+            sb.append(select.columns().get(i));
         }
 
-        sb.append(" FROM ").append(select.tableName());
+        sb.append(" FROM ");
+        
+        for (int i = 0; i < select.tableNames().size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(select.tableNames().get(i));
+        }
 
-        if (select.where().isPresent()) {
-            Statement.Predicate predicate = select.where().get();
-            sb.append(" WHERE ")
-              .append(predicate.columnName())
+        if (!select.filters().isEmpty() || !select.joins().isEmpty())
+            sb.append(" WHERE ");
+
+        boolean firstPredicate = true;
+        for (Statement.FilterPredicate filter : select.filters()) {
+            if (!firstPredicate) sb.append(" AND ");
+            sb.append(filter.columnName())
               .append(" ")
-              .append(comparisonSql(predicate.comparison()))
+              .append(comparisonSql(filter.comparison()))
               .append(" ")
-              .append(literalSql(predicate.constant()));
+              .append(literalSql(filter.constant()));
+            firstPredicate = false;
+        }
+
+        for (Statement.JoinPredicate join : select.joins()) {
+            if (!firstPredicate) sb.append(" AND ");
+            sb.append(join.leftColumnName())
+              .append(" = ")
+              .append(join.rightColumnName());
+            firstPredicate = false;
         }
 
         if (select.limit().isPresent()) {
@@ -78,8 +92,8 @@ public final class SqlPrinter {
         StringBuilder sb = new StringBuilder();
         sb.append("DELETE FROM ").append(delete.tableName());
 
-        if (delete.where().isPresent()) {
-            Statement.Predicate predicate = delete.where().get();
+        if (delete.filter().isPresent()) {
+            Statement.FilterPredicate predicate = delete.filter().get();
             sb.append(" WHERE ")
               .append(predicate.columnName())
               .append(" ")

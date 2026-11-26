@@ -203,7 +203,7 @@ public final class StorageEngine {
      * @param tableName the name of the table to delete from
      * @param predicate an optional predicate to filter rows to delete
      */
-    public int deleteFromTable(Catalog catalog, String tableName, Optional<Statement.Predicate> predicate) {
+    public int deleteFromTable(Catalog catalog, String tableName, Optional<Statement.FilterPredicate> predicate) {
         requireNonNull(tableName);
         requireNonNull(predicate);
 
@@ -324,20 +324,6 @@ public final class StorageEngine {
     }
 
     /**
-     * Returns the schema (list of columns) for the given table.
-     * @param tableName the name of the table
-     */
-    public List<ColumnSpec> schema(Catalog catalog, String tableName) {
-        requireNonNull(tableName);
-
-        TableMeta table = catalog.tables.get(tableName);
-        if (table == null)
-            throw new IllegalArgumentException("unknown table: " + tableName);
-
-        return List.copyOf(table.columns);
-    }
-
-    /**
      * Returns the table's partition metadata without reading partition data.
      * @param tableName the name of the table
      */
@@ -435,13 +421,15 @@ public final class StorageEngine {
                 charNumber += fields[i].length() + 1; // +1 for the comma
             if (fields.length < cols.size())
                 charNumber -= 1;
-            return ParseCsvLineResult.malformed(charNumber, "Line has " + fields.length + " field(s) but expected " + cols.size());
+            return ParseCsvLineResult.malformed(charNumber,
+                    "Line has " + fields.length + " field(s) but expected " + cols.size());
         }
 
         Object[] parsed = new Object[fields.length];
         for (int i = 0; i < fields.length; i++) {
             String field = fields[i];
             ColumnType type = cols.get(i).type();
+
             try {
                 switch (type) {
                     case STRING -> parsed[i] = field;
@@ -449,7 +437,9 @@ public final class StorageEngine {
                     case DOUBLE -> parsed[i] = Double.valueOf(field);
                 }
             } catch (NumberFormatException e) {
-                return ParseCsvLineResult.malformed(charNumber, "Field `" + field + "` cannot be parsed as " + type, e);
+                String column = cols.get(i).name();
+                return ParseCsvLineResult.malformed(charNumber,
+                        "Field `" + field + "` cannot be parsed as " + type + " for column `" + column + "`", e);
             }
             charNumber += field.length() + 1; // +1 for the comma
         }
@@ -773,8 +763,33 @@ public final class StorageEngine {
 
         public Catalog() {} // Needed for deserialization
 
+        public List<ColumnSpec> schema(String tableName) {
+            TableMeta table = tables.get(tableName);
+            if (table == null)
+                throw new IllegalArgumentException("unknown table: " + tableName);
+
+            return List.copyOf(table.columns);
+        }
+
+        public List<TableMeta> tablesFromNames(List<String> tableNames) {
+            List<TableMeta> result = new ArrayList<>(tableNames.size());
+            for (String tableName : tableNames) {
+                TableMeta table = tables.get(tableName);
+                if (table == null)
+                    throw new IllegalArgumentException("unknown table: " + tableName);
+
+                result.add(table);
+            }
+            return result;
+        }
+
         public boolean doesTableExist(String name) {
             return tables.containsKey(name);
+        }
+
+        public boolean doesTableContainColumn(String tableName, String columnName) {
+            List<ColumnSpec> table = schema(tableName);
+            return table.stream().anyMatch(column -> column.name().equals(columnName));
         }
 
         boolean isModified() {

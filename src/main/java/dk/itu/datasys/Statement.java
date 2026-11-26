@@ -8,8 +8,6 @@ import dk.itu.datasys.Spec.*;
 import dk.itu.datasys.Statement.*;
 
 public sealed interface Statement permits CreateTable, Copy, Select, Delete {
-    String tableName();
-
     public static record CreateTable(String tableName, List<ColumnSpec> columns) implements Statement {
         @Override
         public String toString() {
@@ -56,35 +54,55 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
         return new Copy(tableName, csvFilePath);
     }
 
-    public static record Predicate(String columnName, Comparison comparison, Object constant) {
+    public static sealed interface Predicate permits FilterPredicate, JoinPredicate {}
+
+    public static record FilterPredicate(String columnName, Comparison comparison, Object constant) implements Predicate {
         public boolean matches(Object value, ColumnType type) {
             return comparison.matches(value, constant, type);
         }
 
         @Override
         public String toString() {
-            return "Predicate[columnName=" + columnName + " comparison=" + comparison + " constant=" + constant + "]";
+            return "FilterPredicate[columnName=" + columnName + " comparison=" + comparison + " constant=" + constant + "]";
         }
     }
 
-    public static record Select(List<String> columns, String tableName, Optional<Predicate> where, Optional<Integer> limit) implements Statement {
-        public Select(String tableName, Optional<Predicate> where, Optional<Integer> limit) {
-            this(List.of(), tableName, where, limit);
+    public static record JoinPredicate(String leftColumnName, String rightColumnName) implements Predicate {
+        public boolean matches() {
+            throw new RuntimeException("JoinPredicate.matches() is not implemented yet");
         }
 
         @Override
         public String toString() {
-            return "Select[columns=[" + String.join(" ", columns) + "] tableName=" + tableName + " where=" + where + " limit=" + limit + "]";
+            return "JoinPredicate[leftColumnName=" + leftColumnName + " rightColumnName=" + rightColumnName + "]";
+        }
+    }
+
+    public static record Select(List<String> columns, List<String> tableNames, List<FilterPredicate> filters, List<JoinPredicate> joins, Optional<Integer> limit) implements Statement {
+        @Override
+        public String toString() {
+            return "Select[" +
+                "columns=[" + String.join(" ", columns) + "]" +
+                "tableName=[" + String.join(" ", tableNames) + "]" +
+                "filters=[" + String.join(" ", filters.stream().map(Object::toString).toList()) + "] " +
+                "joins=[" + String.join(" ", joins.stream().map(Object::toString).toList()) + "] " +
+                "limit=" + limit +
+                "]";
         }
 
         public static class Builder {
-            private final String tableName;
+            private final List<String> tableNames = new ArrayList<>();
             private final List<String> columns = new ArrayList<>();
-            private Optional<Predicate> where = Optional.empty();
+            private List<FilterPredicate> filters = new ArrayList<>();
+            private List<JoinPredicate> joins = new ArrayList<>();
             private Optional<Integer> limit = Optional.empty();
 
             public Builder(String tableName) {
-                this.tableName = tableName;
+                this.tableNames.add(tableName);
+            }
+
+            public Builder(List<String> tableNames) {
+                this.tableNames.addAll(tableNames);
             }
 
             public Builder columns(List<String> columns) {
@@ -97,13 +115,33 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
                 return this;
             }
 
-            public Builder where(Optional<Predicate> where) {
-                this.where = where;
+            public Builder where(List<FilterPredicate> filters) {
+                this.filters.addAll(filters);
+                return this;
+            }
+
+            public Builder where(FilterPredicate filter) {
+                this.filters.add(filter);
                 return this;
             }
 
             public Builder where(String columnName, Comparison comparison, Object constant) {
-                this.where = Optional.of(new Predicate(columnName, comparison, constant));
+                this.filters.add(new FilterPredicate(columnName, comparison, constant));
+                return this;
+            }
+
+            public Builder joinOn(List<JoinPredicate> joins) {
+                this.joins.addAll(joins);
+                return this;
+            }
+
+            public Builder joinOn(JoinPredicate joinPredicate) {
+                this.joins.add(joinPredicate);
+                return this;
+            }
+
+            public Builder joinOn(String leftColumnName, String rightColumnName) {
+                this.joins.add(new JoinPredicate(leftColumnName, rightColumnName));
                 return this;
             }
 
@@ -118,36 +156,44 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
             }
 
             public Select statement() {
-                return new Select(List.copyOf(columns), tableName, where, limit);
+                return new Select(List.copyOf(columns), tableNames, filters, joins, limit);
             }
         }
     }
 
-    public static record Delete(String tableName, Optional<Predicate> where) implements Statement {
+    public static Select.Builder select(String tableName) {
+        return new Select.Builder(tableName);
+    }
+
+    public static Select.Builder select(List<String> tableNames) {
+        return new Select.Builder(tableNames);
+    }
+
+    public static record Delete(String tableName, Optional<FilterPredicate> filter) implements Statement {
         public Select getMatchingSelect() {
-            return new Select(List.of(), tableName, where, Optional.empty());
+            return new Select(List.of(), List.of(tableName), filter.stream().toList(), List.of(), Optional.empty());
         }
 
         @Override
         public String toString() {
-            return "Delete[tableName=" + tableName + " where=" + where + "]";
+            return "Delete[tableName=" + tableName + " where=" + filter + "]";
         }
 
         public static class Builder {
             private final String tableName;
-            private Optional<Predicate> where = Optional.empty();
+            private Optional<FilterPredicate> where = Optional.empty();
             
             public Builder(String tableName) {
                 this.tableName = tableName;
             }
 
-            public Builder where(Optional<Predicate> where) {
+            public Builder where(Optional<FilterPredicate> where) {
                 this.where = where;
                 return this;
             }
 
             public Builder where(String columnName, Comparison comparison, Object constant) {
-                this.where = Optional.of(new Predicate(columnName, comparison, constant));
+                this.where = Optional.of(new FilterPredicate(columnName, comparison, constant));
                 return this;
             }
 
@@ -159,9 +205,5 @@ public sealed interface Statement permits CreateTable, Copy, Select, Delete {
 
     public static Delete.Builder delete(String tableName) {
         return new Delete.Builder(tableName);
-    }
-
-    public static Select.Builder select(String tableName) {
-        return new Select.Builder(tableName);
     }
 }

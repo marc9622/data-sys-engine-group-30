@@ -12,23 +12,18 @@ import org.slf4j.MDC;
 
 import dk.itu.datasys.StorageEngine.Catalog;
 import dk.itu.datasys.StorageEngine.ScanStats;
-import dk.itu.datasys.StorageEngine.TableMeta;
 import dk.itu.datasys.ops.Operator;
 
 public final class Executor {
     private static final Logger LOGGER = LoggerFactory.getLogger(Executor.class);
 
     private final StorageEngine engine;
-    private final SqlParser parser;
-    private final Binder binder;
     private final Planner planner;
 
     private ScanStats lastScanStats = null;
 
     public Executor(StorageEngine engine) {
         this.engine = Objects.requireNonNull(engine, "engine");
-        this.parser = new SqlParser();
-        this.binder = new Binder(engine);
         this.planner = new Planner(engine);
     }
 
@@ -41,7 +36,7 @@ public final class Executor {
             List<List<Object[]>> results = new ArrayList<>(); 
 
             List<Statement> statements = Utils.logExceptions(LOGGER, "failed to parse query", () ->
-                    parser.parse(sqlText));
+                    SqlParser.parse(sqlText));
 
             for (int statementNumber = 0; statementNumber < statements.size(); statementNumber++) {
                 Statement statement = statements.get(statementNumber);
@@ -67,7 +62,7 @@ public final class Executor {
 
         try {
             Utils.logExceptions(LOGGER, "failed to bind statement", () ->
-                binder.bindStatement(catalog, statement));
+                Binder.bindStatement(catalog, statement));
 
             List<Object[]> result = switch (statement) {
                 case Statement.CreateTable create ->
@@ -88,7 +83,7 @@ public final class Executor {
 
                 case Statement.Delete delete ->
                     Utils.logExceptions(LOGGER, "failed to execute delete", () -> {
-                        engine.deleteFromTable(catalog, delete.tableName(), delete.where());
+                        engine.deleteFromTable(catalog, delete.tableName(), delete.filter());
                         return List.of();
                     });
             };
@@ -128,12 +123,15 @@ public final class Executor {
 
         double executionMs = (System.nanoTime() - executionStart) / 1_000_000.0;
         
-        TableMeta tableMeta = catalog.tables.get(select.tableName());
+        List<String> tablesWithVersions = select.tableNames().stream()
+                .map(tableName -> tableName + "(version=" + catalog.tables.get(tableName).version + ")")
+                .toList();
 
         double elapsedMs = planningMs + executionMs;
 
-        LOGGER.debug("statement=SELECT table={} rowsOut={} partitionsRead={} partitionsPruned={} version={} durationMs={}",
-            select.tableName(), rows.size(), lastScanStats.partitionsRead(), lastScanStats.partitionsPruned(), tableMeta.version, elapsedMs);
+        LOGGER.debug("statement=SELECT tables=[{}] rowsOut={} partitionsRead={} partitionsPruned={} durationMs={}",
+            String.join(" ", tablesWithVersions), rows.size(), lastScanStats.partitionsRead(),
+            lastScanStats.partitionsPruned(), elapsedMs);
         LOGGER.debug("select planningMs={} executionMs={} elapsedMs={}",
             planningMs, executionMs, elapsedMs);
                 

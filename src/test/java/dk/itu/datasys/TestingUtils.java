@@ -20,13 +20,38 @@ public final class TestingUtils {
     private TestingUtils() {}
 
     public static final String tripsName = "trips";
-
     public static final List<ColumnSpec> tripsColumns = List.of(
             new ColumnSpec("city", ColumnType.STRING),
             new ColumnSpec("distance", ColumnType.LONG),
             new ColumnSpec("price", ColumnType.DOUBLE));
+    public static final List<Object[]> tripsRows = parseCsvFile(resource("trips.csv"), tripsColumns);
 
-    public static final List<Object[]> tripsRows = parseCsvFile(resource("trips.csv"));
+    public static final String citiesName = "cities";
+    public static final List<ColumnSpec> citiesColumns = List.of(
+            new ColumnSpec("ct_city", ColumnType.STRING),
+            new ColumnSpec("ct_country", ColumnType.STRING),
+            new ColumnSpec("ct_population", ColumnType.LONG));
+    public static final List<Object[]> citiesRows = parseCsvFile(resource("cities.csv"), citiesColumns);
+
+    public static final String customersName = "customers";
+    public static final List<ColumnSpec> customersColumns = List.of(
+            new ColumnSpec("c_name", ColumnType.STRING),
+            new ColumnSpec("c_city", ColumnType.STRING));
+    public static final List<Object[]> customersRows = parseCsvFile(resource("customers.csv"), customersColumns);
+
+    public static final String ordersName = "orders";
+    public static final List<ColumnSpec> ordersColumns = List.of(
+            new ColumnSpec("o_orderkey", ColumnType.LONG),
+            new ColumnSpec("o_custname", ColumnType.STRING),
+            new ColumnSpec("o_prodname", ColumnType.STRING),
+            new ColumnSpec("o_quantity", ColumnType.LONG));
+    public static final List<Object[]> ordersRows = parseCsvFile(resource("orders.csv"), ordersColumns);
+
+    public static final String productsName = "products";
+    public static final List<ColumnSpec> productsColumns = List.of(
+            new ColumnSpec("p_name", ColumnType.STRING),
+            new ColumnSpec("p_price", ColumnType.DOUBLE));
+    public static final List<Object[]> productsRows = parseCsvFile(resource("products.csv"), productsColumns);
 
     public static Path resource(String name) {
         return Path.of("src/test/resources/" + name).toAbsolutePath();
@@ -58,13 +83,13 @@ public final class TestingUtils {
         }
     }
 
-    public static List<Object[]> parseCsvFile(Path path) {
+    public static List<Object[]> parseCsvFile(Path path, List<ColumnSpec> columns) {
         List<Object[]> rows = new ArrayList<>();
 
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.US_ASCII)) {
             String line;
             while ((line = reader.readLine()) != null) {
-                Object[] parsed = switch (StorageEngine.parseCsvLine(line, tripsColumns)) {
+                Object[] parsed = switch (StorageEngine.parseCsvLine(line, columns)) {
                     case ParseCsvLineResult.Success(Object[] row) -> row;
                     case ParseCsvLineResult.Malformed m ->
                         throw m.toRuntimeException(path, rows.size());
